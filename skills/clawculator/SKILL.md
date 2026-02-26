@@ -1,6 +1,6 @@
 ---
 name: clawculator
-description: Analyze OpenClaw costs and detect billing issues. Reads local config and session files only. No network calls. Source code is bundled in this skill folder — nothing is fetched at runtime.
+description: Analyze OpenClaw costs and detect billing issues. Source code is fully bundled — nothing is fetched at runtime. Requires only the node binary.
 homepage: https://github.com/echoudhry/clawculator
 user-invocable: true
 metadata: {"openclaw":{"emoji":"🦞","requires":{"bins":["node"]}}}
@@ -12,12 +12,20 @@ Cost forensics for OpenClaw. Finds billing issues in your config, sessions, and 
 
 **Source code is fully bundled in this skill folder.** Nothing is fetched at runtime. You can audit every file before running.
 
-**Files this skill reads (read-only, never writes):**
+**Files this skill reads:**
 - `~/.openclaw/openclaw.json` — your OpenClaw config
 - `~/.openclaw/agents/main/sessions/sessions.json` — session token usage
 - `~/clawd/` — workspace root file count only (no file contents read)
+- `/tmp/openclaw` — log directory (read only, if present)
 
-**No other files are accessed. No network requests are made.**
+**Files this skill may write (only when flags are used):**
+- `./clawculator-report.md` — when `--md` flag is passed
+- `./clawculator-report.html` — when `--report` flag is passed
+- Custom path via `--out=PATH`
+
+**Session keys are truncated in all output** (first 8 chars + ellipsis) to avoid exposing sensitive identifiers.
+
+**`--report` opens the HTML file locally** using `open` (macOS) or `xdg-open` (Linux). No network requests are made.
 
 ---
 
@@ -32,9 +40,10 @@ node {baseDir}/run.js --md
 Return the full markdown report to the user inline.
 
 **Flags**
-- `--md` — markdown output (default for agent use)
-- `--json` — machine-readable JSON
-- `--report` — open HTML dashboard in browser
+- `--md` — write markdown report and print to stdout
+- `--json` — machine-readable JSON to stdout
+- `--report` — write HTML dashboard and open in browser
+- `--out=PATH` — custom output path for `--md` or `--report`
 - `node {baseDir}/run.js --help` — full usage
 
 **What it catches**

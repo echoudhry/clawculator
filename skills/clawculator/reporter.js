@@ -82,7 +82,8 @@ function generateTerminalReport(analysis) {
     for (const s of sorted) {
       const tok = (s.inputTokens + s.outputTokens).toLocaleString();
       const flag = s.isOrphaned ? ' ⚠️' : '';
-      console.log(`  ${(s.key + flag).slice(0, 42).padEnd(42)} ${(s.modelLabel || s.model || 'unknown').slice(0, 22).padEnd(22)} ${tok.padEnd(10)} $${s.cost.toFixed(6)}`);
+      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
+      console.log(`  ${(keyDisplay + flag).slice(0, 42).padEnd(42)} ${(s.modelLabel || s.model || 'unknown').slice(0, 22).padEnd(22)} ${tok.padEnd(10)} $${s.cost.toFixed(6)}`);
     }
     console.log();
   }

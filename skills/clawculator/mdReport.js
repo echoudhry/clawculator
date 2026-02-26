@@ -87,7 +87,8 @@ function generateMarkdownReport(analysis) {
       .forEach(s => {
         const tok  = (s.inputTokens + s.outputTokens).toLocaleString();
         const flag = s.isOrphaned ? ' ⚠️' : '';
-        lines.push(`| \`${s.key}${flag}\` | ${s.modelLabel || s.model} | ${tok} | $${s.cost.toFixed(6)} |`);
+        const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
+        lines.push(`| \`${keyDisplay}${flag}\` | ${s.modelLabel || s.model} | ${tok} | $${s.cost.toFixed(6)} |`);
       });
 
     lines.push('');
