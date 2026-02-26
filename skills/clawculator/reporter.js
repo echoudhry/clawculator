@@ -35,6 +35,19 @@ function formatCost(cost) {
   return `\x1b[31m$${cost.toFixed(2)}/mo\x1b[0m`;
 }
 
+function relativeAge(ageMs) {
+  if (!ageMs) return 'unknown';
+  const s = Math.floor(ageMs / 1000);
+  if (s < 60)        return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60)        return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24)        return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30)        return `${d}d ago`;
+  return `${Math.floor(d / 30)}mo ago`;
+}
+
 function generateTerminalReport(analysis) {
   const { summary, findings, sessions } = analysis;
   const R = '\x1b[0m';
@@ -77,13 +90,22 @@ function generateTerminalReport(analysis) {
   if (sessions?.length > 0) {
     console.log(`${C}━━━ Top Sessions by Token Usage ━━━${R}\n`);
     const sorted = [...sessions].sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens)).slice(0, 8);
-    console.log(`  ${D}${'Session'.padEnd(42)} ${'Model'.padEnd(22)} ${'Tokens'.padEnd(10)} Cost${R}`);
-    console.log(`  ${D}${'─'.repeat(85)}${R}`);
+    console.log(`  ${D}${'Session'.padEnd(16)} ${'Model'.padEnd(20)} ${'Tokens'.padEnd(10)} ${'Total Cost'.padEnd(12)} ${'$/day'.padEnd(10)} Last Active${R}`);
+    console.log(`  ${D}${'─'.repeat(95)}${R}`);
     for (const s of sorted) {
-      const tok = (s.inputTokens + s.outputTokens).toLocaleString();
-      const flag = s.isOrphaned ? ' ⚠️' : '';
+      const tok        = (s.inputTokens + s.outputTokens).toLocaleString();
+      const flag       = s.isOrphaned ? ' ⚠️' : '';
       const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
-      console.log(`  ${(keyDisplay + flag).slice(0, 42).padEnd(42)} ${(s.modelLabel || s.model || 'unknown').slice(0, 22).padEnd(22)} ${tok.padEnd(10)} $${s.cost.toFixed(6)}`);
+      const age        = s.ageMs ? `${relativeAge(s.ageMs)} (${new Date(s.updatedAt).toLocaleDateString()})` : 'unknown';
+      const daily      = s.dailyCost ? `$${s.dailyCost.toFixed(4)}` : '—';
+      console.log(`  ${(keyDisplay + flag).padEnd(16)} ${(s.modelLabel || s.model || 'unknown').slice(0, 20).padEnd(20)} ${tok.padEnd(10)} $${s.cost.toFixed(6).padEnd(11)} ${daily.padEnd(10)} ${D}${age}${R}`);
+    }
+
+    // Daily burn rate summary
+    const totalDailyRate = sessions.filter(s => s.dailyCost).reduce((sum, s) => sum + s.dailyCost, 0);
+    if (totalDailyRate > 0) {
+      console.log();
+      console.log(`  ${D}Combined burn rate: ${R}${RED}$${totalDailyRate.toFixed(4)}/day${R}${D} · ~$${(totalDailyRate * 30).toFixed(2)}/month${R}`);
     }
     console.log();
   }
@@ -93,7 +115,7 @@ function generateTerminalReport(analysis) {
   console.log(`  🔴 ${RED}${summary.critical}${R} critical  🟠 ${summary.high} high  🟡 ${summary.medium} medium  ✅ ${summary.info} ok`);
   console.log(`  Sessions analyzed: ${summary.sessionsAnalyzed} · Tokens found: ${(summary.totalTokensFound||0).toLocaleString()}`);
   if (bleed > 0) {
-    console.log(`  ${RED}${B}Monthly bleed: $${bleed.toFixed(2)}/month${R}`);
+    console.log(`  ${RED}${B}Estimated monthly bleed: $${bleed.toFixed(2)}/month${R}`);
   } else {
     console.log(`  ${GRN}No significant cost bleed detected ✓${R}`);
   }

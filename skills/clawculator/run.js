@@ -10,7 +10,6 @@ const fs = require('fs');
 
 const args = process.argv.slice(2);
 const flags = {
-  report: args.includes('--report'),
   json:   args.includes('--json'),
   md:     args.includes('--md'),
   help:   args.includes('--help') || args.includes('-h'),
@@ -32,23 +31,27 @@ const BANNER = `
 `;
 
 const HELP = `
-Usage: clawculator [options]
+Usage: node run.js [options]
 
 Options:
   (no flags)        Full terminal analysis
   --md              Save markdown report to ./clawculator-report.md
-  --report          Generate HTML report and open in browser
-  --json            Output raw JSON
-  --out=PATH        Custom output path for --md or --report
+  --json            Output raw JSON to stdout
+  --out=PATH        Custom output path for --md
   --config=PATH     Path to openclaw.json (auto-detected by default)
   --help, -h        Show this help
 
-Examples:
-  npx clawculator                         # Terminal analysis
-  npx clawculator --md                    # Markdown report (readable by your AI agent)
-  npx clawculator --report                # Visual HTML dashboard
-  npx clawculator --json                  # JSON for piping
-  npx clawculator --md --out=~/cost.md    # Custom path
+Files read (read-only):
+  ~/.openclaw/openclaw.json
+  ~/.openclaw/agents/main/sessions/sessions.json
+  ~/clawd/ (file count only, no contents)
+  /tmp/openclaw (if present)
+
+Files written (only when --md is used):
+  ./clawculator-report.md (or --out path)
+
+No network requests are made. No data leaves your machine.
+Session keys are truncated in all output to protect sensitive identifiers.
 `;
 
 async function main() {
@@ -82,17 +85,6 @@ async function main() {
     const outPath = flags.out || path.join(process.cwd(), 'clawculator-report.md');
     fs.writeFileSync(outPath, generateMarkdownReport(analysis), 'utf8');
     console.log(`\x1b[32m✓ Markdown report saved:\x1b[0m ${outPath}`);
-    generateTerminalReport(analysis);
-    process.exit(0);
-  }
-
-  if (flags.report) {
-    const outPath = flags.out || path.join(os.tmpdir(), `clawculator-${Date.now()}.html`);
-    const { generateHTMLReport } = require('../src/htmlReport');
-    await generateHTMLReport(analysis, outPath);
-    const { exec } = require('child_process');
-    exec(`open "${outPath}" 2>/dev/null || xdg-open "${outPath}" 2>/dev/null`);
-    console.log(`\x1b[32m✓ HTML report saved:\x1b[0m ${outPath}`);
     generateTerminalReport(analysis);
     process.exit(0);
   }

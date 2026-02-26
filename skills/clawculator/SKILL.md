@@ -18,14 +18,13 @@ Cost forensics for OpenClaw. Finds billing issues in your config, sessions, and 
 - `~/clawd/` — workspace root file count only (no file contents read)
 - `/tmp/openclaw` — log directory (read only, if present)
 
-**Files this skill may write (only when flags are used):**
-- `./clawculator-report.md` — when `--md` flag is passed
-- `./clawculator-report.html` — when `--report` flag is passed
+**Files this skill may write (only when `--md` is used):**
+- `./clawculator-report.md` — markdown report
 - Custom path via `--out=PATH`
 
-**Session keys are truncated in all output** (first 8 chars + ellipsis) to avoid exposing sensitive identifiers.
+**No network requests are made. No shell commands are spawned.**
 
-**`--report` opens the HTML file locally** using `open` (macOS) or `xdg-open` (Linux). No network requests are made.
+**Session keys are truncated in all output** (first 8 chars + ellipsis) to avoid exposing sensitive identifiers.
 
 ---
 
@@ -42,8 +41,7 @@ Return the full markdown report to the user inline.
 **Flags**
 - `--md` — write markdown report and print to stdout
 - `--json` — machine-readable JSON to stdout
-- `--report` — write HTML dashboard and open in browser
-- `--out=PATH` — custom output path for `--md` or `--report`
+- `--out=PATH` — custom output path for `--md`
 - `node {baseDir}/run.js --help` — full usage
 
 **What it catches**
