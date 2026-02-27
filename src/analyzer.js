@@ -141,6 +141,11 @@ function isLocalModel(modelStr) {
     ['qwen', 'llama', 'mistral', 'phi', 'gemma', 'deepseek', 'kimi'].some(m => lower.includes(m));
 }
 
+function isHaikuTier(modelStr) {
+  if (!modelStr) return false;
+  return modelStr.toLowerCase().includes('haiku');
+}
+
 function isOpenRouter(modelStr) {
   return modelStr?.toLowerCase().startsWith('openrouter/');
 }
@@ -337,25 +342,37 @@ function analyzeConfig(configPath) {
   const hooks = config.hooks?.internal?.entries || config.hooks || {};
   const hookNames = Object.keys(hooks).filter(k => k !== 'enabled' && k !== 'token' && k !== 'path');
   let hookIssues = 0;
+  let haikuHooks = 0;
 
   for (const name of hookNames) {
     const hook = typeof hooks[name] === 'object' ? hooks[name] : {};
     if (hook.enabled === false) continue;
     const hookModel = hook.model || primaryModel;
-    if (!isLocalModel(hookModel) && resolveModel(hookModel)) {
+    if (isLocalModel(hookModel)) {
+      // local = free, no finding needed
+    } else if (isHaikuTier(hookModel) && resolveModel(hookModel)) {
+      const monthly = costPerCall(resolveModel(hookModel), 1000, 200) * 50 * 30;
+      haikuHooks++;
+      findings.push({
+        severity: 'low', source: 'hooks',
+        message: `Hook "${name}" on Haiku — minimal cost, good choice`,
+        detail: `~50 fires/day estimated · $${monthly.toFixed(2)}/month`,
+        monthlyCost: monthly,
+      });
+    } else if (resolveModel(hookModel)) {
       const monthly = costPerCall(resolveModel(hookModel), 1000, 200) * 50 * 30;
       hookIssues++;
       findings.push({
         severity: 'high', source: 'hooks',
-        message: `Hook "${name}" running on paid model: ${hookModel || 'primary'}`,
+        message: `Hook "${name}" running on ${hookModel} — switch to Haiku or local`,
         detail: `~50 fires/day estimated · $${monthly.toFixed(2)}/month`,
         monthlyCost: monthly,
         ...FIXES.HOOK_PAID_MODEL(name),
       });
     }
   }
-  if (hookNames.length > 0 && hookIssues === 0) {
-    findings.push({ severity: 'info', source: 'hooks', message: `All ${hookNames.length} hooks on cheap/local models ✓`, monthlyCost: 0 });
+  if (hookNames.length > 0 && hookIssues === 0 && haikuHooks === 0) {
+    findings.push({ severity: 'info', source: 'hooks', message: `All ${hookNames.length} hooks on local models ✓`, monthlyCost: 0 });
   }
 
   // ── WhatsApp ───────────────────────────────────────────────────

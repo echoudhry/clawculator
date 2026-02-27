@@ -4,6 +4,7 @@ const SEVERITY_CONFIG = {
   critical: { color: '\x1b[31m', icon: '🔴', label: 'CRITICAL' },
   high:     { color: '\x1b[33m', icon: '🟠', label: 'HIGH' },
   medium:   { color: '\x1b[33m', icon: '🟡', label: 'MEDIUM' },
+  low:      { color: '\x1b[36m', icon: '🔵', label: 'LOW' },
   info:     { color: '\x1b[32m', icon: '✅', label: 'OK' },
 };
 
@@ -54,7 +55,7 @@ function generateTerminalReport(analysis) {
     console.log(`${B}${RED}⚠️  Estimated monthly cost exposure: $${bleed.toFixed(2)}/month${R}\n`);
   }
 
-  for (const severity of ['critical', 'high', 'medium', 'info']) {
+  for (const severity of ['critical', 'high', 'medium', 'low', 'info']) {
     const group = findings.filter(f => f.severity === severity);
     if (!group.length) continue;
 
@@ -89,7 +90,7 @@ function generateTerminalReport(analysis) {
 
   // Summary
   console.log(`${C}━━━ Summary ━━━${R}`);
-  console.log(`  🔴 ${RED}${summary.critical}${R} critical  🟠 ${summary.high} high  🟡 ${summary.medium} medium  ✅ ${summary.info} ok`);
+  console.log(`  🔴 ${RED}${summary.critical}${R} critical  🟠 ${summary.high} high  🟡 ${summary.medium} medium  🔵 ${summary.low||0} low  ✅ ${summary.info} ok`);
   console.log(`  Sessions analyzed: ${summary.sessionsAnalyzed} · Tokens found: ${(summary.totalTokensFound||0).toLocaleString()}`);
   if (bleed > 0) {
     console.log(`  ${RED}${B}Monthly bleed: $${bleed.toFixed(2)}/month${R}`);
