@@ -10,6 +10,7 @@ AI cost forensics for OpenClaw and multi-model setups. One command. Full analysi
 
 [![npm version](https://badge.fury.io/js/clawculator.svg)](https://badge.fury.io/js/clawculator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Live Demo](https://img.shields.io/badge/demo-live-38bdf8)](https://echoudhry.github.io/clawculator)
 
 ---
 
