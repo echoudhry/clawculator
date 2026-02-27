@@ -1,6 +1,6 @@
 {
   "name": "clawculator",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "AI cost forensics for OpenClaw and multi-model setups. Your friendly penny pincher. 100% offline. Zero AI. Pure deterministic logic.",
   "main": "src/analyzer.js",
   "bin": {
