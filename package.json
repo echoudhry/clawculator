@@ -1,31 +1,24 @@
 {
   "name": "clawculator",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "AI cost forensics for OpenClaw and multi-model setups. Your friendly penny pincher. 100% offline. Zero AI. Pure deterministic logic.",
   "main": "src/analyzer.js",
   "bin": {
-    "clawculator": "bin/clawculator.js"
+    "clawculator": "./bin/clawculator.js"
   },
   "scripts": {
     "start": "node bin/clawculator.js",
     "test": "node -e \"const {runAnalysis} = require('./src/analyzer'); runAnalysis({configPath:'~/.openclaw/openclaw.json',sessionsPath:'',logsDir:''}).then(r => console.log('OK:', r.summary))\""
   },
   "keywords": [
-    "openclaw",
-    "claude",
-    "anthropic",
-    "ai-cost",
-    "token-usage",
-    "cost-optimization",
-    "llm-cost",
-    "ai-forensics",
-    "multi-model"
+    "openclaw", "claude", "anthropic", "ai-cost", "token-usage",
+    "cost-optimization", "llm-cost", "ai-forensics", "multi-model"
   ],
   "author": "Ed Choudhry",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/echoudhry/clawculator.git"
+    "url": "https://github.com/echoudhry/clawculator"
   },
   "engines": {
     "node": ">=18.0.0"
