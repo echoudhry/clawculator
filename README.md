@@ -22,6 +22,8 @@ It could be any of these. Clawculator finds all of them — with zero AI, zero g
 
 ---
 
+![Clawculator Report](report-preview.png)
+
 ## [▶ Live Demo](https://echoudhry.github.io/clawculator)
 
 See it run against a real config — findings, fix commands, cost exposure, session breakdown.

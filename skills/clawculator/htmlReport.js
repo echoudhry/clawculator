@@ -88,8 +88,9 @@ async function generateHTMLReport(analysis) {
     .logo { font-size: 42px; font-weight: 900; letter-spacing: -2px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .tagline { color: #94a3b8; margin-top: 8px; font-size: 16px; }
     .container { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
-    .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+    .cards { display: table; width: 100%; border-spacing: 16px; border-collapse: separate; margin-bottom: 16px; }
+    .cards-row { display: table-row; }
+    .card { display: table-cell; background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; width: 16.6%; }
     .card-value { font-size: 32px; font-weight: 800; }
     .card-label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
     .section { background: #1e293b; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #334155; }
@@ -121,7 +122,7 @@ async function generateHTMLReport(analysis) {
       <div style="color:#86efac; font-size:18px; font-weight:700">✅ No significant cost bleed detected</div>
     </div>`}
 
-    <div class="cards">
+    <div class="cards"><div class="cards-row">
       <div class="card">
         <div class="card-value" style="color:#ef4444">${summary.critical}</div>
         <div class="card-label">🔴 Critical</div>
@@ -146,7 +147,7 @@ async function generateHTMLReport(analysis) {
         <div class="card-value" style="color:#818cf8">${(summary.totalTokensFound || 0).toLocaleString()}</div>
         <div class="card-label">Total Tokens Found</div>
       </div>
-    </div>
+    </div></div>
 
     <div class="section">
       <div class="section-title">Findings</div>
