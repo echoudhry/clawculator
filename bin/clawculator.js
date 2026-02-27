@@ -87,7 +87,7 @@ async function main() {
   }
 
   if (flags.report) {
-    const outPath = flags.out || path.join(os.tmpdir(), `clawculator-${Date.now()}.html`);
+    const outPath = flags.out || path.join(process.cwd(), `clawculator-report.html`);
     const { generateHTMLReport } = require('../src/htmlReport');
     await generateHTMLReport(analysis, outPath);
     const { exec } = require('child_process');
