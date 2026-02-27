@@ -1,0 +1,1233 @@
+diff --git a/skills/clawculator/analyzer.js b/skills/clawculator/analyzer.js
+index 2d640a9..dfe3ab6 100644
+--- a/skills/clawculator/analyzer.js
++++ b/skills/clawculator/analyzer.js
+@@ -347,8 +347,8 @@ function analyzeConfig(configPath) {
+   const hooks = config.hooks?.internal?.entries || config.hooks || {};
+   const hookNames = Object.keys(hooks).filter(k => k !== 'enabled' && k !== 'token' && k !== 'path');
+   let hookIssues = 0;
+-
+   let haikuHooks = 0;
++
+   for (const name of hookNames) {
+     const hook = typeof hooks[name] === 'object' ? hooks[name] : {};
+     if (hook.enabled === false) continue;
+@@ -500,14 +500,110 @@ function analyzeConfig(configPath) {
+ }
+ 
+ // ── Session analysis ──────────────────────────────────────────────
++
++/**
++ * Parse a .jsonl session transcript file and sum up real usage/cost data.
++ * Returns { input, output, cacheRead, cacheWrite, totalTokens, totalCost, messageCount, model, firstTs, lastTs }
++ */
++function parseTranscript(jsonlPath) {
++  try {
++    const content = fs.readFileSync(jsonlPath, 'utf8').trim();
++    if (!content) return null;
++
++    let input = 0, output = 0, cacheRead = 0, cacheWrite = 0, totalTokens = 0, totalCost = 0;
++    let messageCount = 0, model = null, firstTs = null, lastTs = null;
++
++    for (const line of content.split('\n')) {
++      if (!line.trim()) continue;
++      let entry;
++      try { entry = JSON.parse(line); } catch { continue; }
++
++      // Track timestamps from all message types
++      const ts = entry.timestamp || entry.message?.timestamp;
++      if (ts) {
++        const t = typeof ts === 'number' ? ts : new Date(ts).getTime();
++        if (!firstTs || t < firstTs) firstTs = t;
++        if (!lastTs  || t > lastTs)  lastTs = t;
++      }
++
++      // Only assistant messages with usage blocks have cost data
++      if (entry.type !== 'message') continue;
++      if (!entry.usage) continue;
++
++      messageCount++;
++      const u = entry.usage;
++
++      // Use model from transcript (most accurate)
++      if (entry.model && !model) model = entry.model;
++
++      input       += u.input       || 0;
++      output      += u.output      || 0;
++      cacheRead   += u.cacheRead   || 0;
++      cacheWrite  += u.cacheWrite  || 0;
++      totalTokens += u.totalTokens || 0;
++
++      // Prefer API-reported cost (already accounts for cache pricing)
++      if (u.cost) {
++        if (typeof u.cost === 'object' && u.cost.total != null) {
++          totalCost += u.cost.total;
++        } else if (typeof u.cost === 'number') {
++          totalCost += u.cost;
++        }
++      }
++    }
++
++    if (messageCount === 0) return null;
++
++    return { input, output, cacheRead, cacheWrite, totalTokens, totalCost, messageCount, model, firstTs, lastTs };
++  } catch {
++    return null;
++  }
++}
++
++/**
++ * Discover all agent session directories (not just main).
++ */
++function discoverAgentDirs() {
++  const agentsDir = path.join(os.homedir(), '.openclaw', 'agents');
++  const dirs = [];
++  try {
++    for (const agent of fs.readdirSync(agentsDir)) {
++      const sessionsDir = path.join(agentsDir, agent, 'sessions');
++      if (fs.existsSync(sessionsDir) && fs.statSync(sessionsDir).isDirectory()) {
++        dirs.push({ agent, sessionsDir });
++      }
++    }
++  } catch { /* agents dir doesn't exist */ }
++  return dirs;
++}
++
++/**
++ * Discover web-chat session transcripts.
++ */
++function discoverWebChatSessions() {
++  const webChatDir = path.join(os.homedir(), '.openclaw', 'web-chat');
++  const sessions = [];
++  try {
++    for (const file of fs.readdirSync(webChatDir)) {
++      if (file.endsWith('.jsonl')) {
++        sessions.push(path.join(webChatDir, file));
++      }
++    }
++  } catch { /* web-chat dir doesn't exist */ }
++  return sessions;
++}
++
+ function analyzeSessions(sessionsPath) {
+   const findings = [];
+   const sessions = readJSON(sessionsPath);
++  const sessionsDir = sessionsPath ? path.dirname(sessionsPath) : null;
+ 
+-  if (!sessions) return { exists: false, findings: [], sessions: [], totalInputTokens: 0, totalOutputTokens: 0, totalCost: 0, sessionCount: 0 };
++  if (!sessions) return { exists: false, findings: [], sessions: [], totalInputTokens: 0, totalOutputTokens: 0, totalCost: 0, totalCacheRead: 0, totalCacheWrite: 0, totalRealCost: 0, sessionCount: 0 };
+ 
+   let totalIn = 0, totalOut = 0, totalCost = 0;
++  let totalCacheRead = 0, totalCacheWrite = 0, totalRealCost = 0;
+   const breakdown = [], orphaned = [], large = [];
++  let transcriptHits = 0, transcriptMisses = 0;
+ 
+   for (const key of Object.keys(sessions)) {
+     const s        = sessions[key];
+@@ -515,31 +611,121 @@ function analyzeSessions(sessionsPath) {
+     const modelKey = resolveModel(model);
+     const inTok    = s.inputTokens  || s.tokensIn  || s.tokens?.input  || 0;
+     const outTok   = s.outputTokens || s.tokensOut || s.tokens?.output || 0;
+-    const cost     = costPerCall(modelKey, inTok, outTok);
++    const estimatedCost = costPerCall(modelKey, inTok, outTok);
+     const updatedAt = s.updatedAt || s.lastActive || null;
+ 
+-    totalIn   += inTok;
+-    totalOut  += outTok;
+-    totalCost += cost;
++    // Try to load transcript for real cost data
++    let transcript = null;
++    if (sessionsDir) {
++      const jsonlPath = path.join(sessionsDir, `${key}.jsonl`);
++      transcript = parseTranscript(jsonlPath);
++    }
++
++    // Use transcript data when available, fall back to sessions.json estimates
++    let realIn, realOut, realCacheRead, realCacheWrite, realCost, realModel, realTotalTokens;
++    if (transcript) {
++      transcriptHits++;
++      realIn         = transcript.input;
++      realOut        = transcript.output;
++      realCacheRead  = transcript.cacheRead;
++      realCacheWrite = transcript.cacheWrite;
++      realCost       = transcript.totalCost;
++      realModel      = transcript.model || model;
++      realTotalTokens = transcript.totalTokens;
++    } else {
++      transcriptMisses++;
++      realIn         = inTok;
++      realOut        = outTok;
++      realCacheRead  = 0;
++      realCacheWrite = 0;
++      realCost       = estimatedCost;
++      realModel      = model;
++      realTotalTokens = inTok + outTok;
++    }
++
++    totalIn         += realIn;
++    totalOut        += realOut;
++    totalCacheRead  += realCacheRead;
++    totalCacheWrite += realCacheWrite;
++    totalCost       += estimatedCost;
++    totalRealCost   += realCost;
++
++    const allTokens = realTotalTokens || (realIn + realOut + realCacheRead + realCacheWrite);
+ 
+     const isOrphaned = key.includes('cron') || key.includes('deleted') ||
+       (updatedAt && Date.now() - new Date(updatedAt).getTime() > 48 * 3600 * 1000 && !key.includes('main'));
+ 
+-    if (isOrphaned) orphaned.push({ key, model, tokens: inTok + outTok, cost });
+-    if (inTok + outTok > 50000) large.push({ key, model, tokens: inTok + outTok });
++    if (isOrphaned) orphaned.push({ key, model: realModel, tokens: allTokens, cost: realCost });
++    if (allTokens > 50000) large.push({ key, model: realModel, tokens: allTokens });
+ 
+     const ageMs    = updatedAt ? Date.now() - new Date(updatedAt).getTime() : null;
+     const ageDays  = ageMs ? ageMs / (1000 * 3600 * 24) : null;
+-    const dailyCost = (ageDays && ageDays > 0.01 && cost > 0) ? cost / ageDays : null;
+-
+-    breakdown.push({ key, model, modelLabel: modelKey ? (MODEL_PRICING[modelKey]?.label || modelKey) : 'unknown', inputTokens: inTok, outputTokens: outTok, cost, updatedAt, ageMs, dailyCost, isOrphaned });
++    const dailyCost = (ageDays && ageDays > 0.01 && realCost > 0) ? realCost / ageDays : null;
++
++    const realModelKey = resolveModel(realModel);
++    breakdown.push({
++      key, model: realModel,
++      modelLabel: realModelKey ? (MODEL_PRICING[realModelKey]?.label || realModelKey) : (modelKey ? (MODEL_PRICING[modelKey]?.label || modelKey) : 'unknown'),
++      inputTokens: realIn, outputTokens: realOut,
++      cacheRead: realCacheRead, cacheWrite: realCacheWrite,
++      cost: realCost, estimatedCost,
++      hasTranscript: !!transcript,
++      messageCount: transcript?.messageCount || 0,
++      updatedAt, ageMs, dailyCost, isOrphaned,
++    });
+   }
+ 
++  // Findings
+   if (orphaned.length > 0) findings.push({ severity: 'high', source: 'sessions', message: `${orphaned.length} orphaned session(s) — still holding tokens on paid models`, detail: orphaned.map(s => `${s.key}: ${s.tokens.toLocaleString()} tokens ($${s.cost.toFixed(4)})`).join('\n  '), ...FIXES.ORPHANED_SESSIONS });
+   if (large.length > 0) findings.push({ severity: 'medium', source: 'sessions', message: `${large.length} session(s) with >50k tokens per conversation`, detail: large.map(s => `${s.key}: ${s.tokens.toLocaleString()} tokens`).join('\n  '), ...FIXES.LARGE_SESSIONS });
+   if (Object.keys(sessions).length > 0 && !orphaned.length && !large.length) findings.push({ severity: 'info', source: 'sessions', message: `${Object.keys(sessions).length} session(s) healthy ✓`, detail: `Total tokens: ${(totalIn + totalOut).toLocaleString()}` });
+ 
+-  return { exists: true, findings, sessions: breakdown, totalInputTokens: totalIn, totalOutputTokens: totalOut, totalCost, sessionCount: Object.keys(sessions).length };
++  // Cache cost finding
++  if (totalCacheWrite > 0 || totalCacheRead > 0) {
++    const cacheDetail = [];
++    if (totalCacheRead > 0)  cacheDetail.push(`Cache reads: ${totalCacheRead.toLocaleString()} tokens`);
++    if (totalCacheWrite > 0) cacheDetail.push(`Cache writes: ${totalCacheWrite.toLocaleString()} tokens`);
++    const cacheCostPortion = totalRealCost - totalCost;
++    if (cacheCostPortion > 0.01) {
++      findings.push({
++        severity: cacheCostPortion > 1 ? 'high' : 'medium',
++        source: 'sessions',
++        message: `Prompt caching added $${cacheCostPortion.toFixed(4)} beyond base token costs`,
++        detail: cacheDetail.join('\n  ') + `\n  Cache writes are 3.75x input cost · Cache reads are 0.1x input cost`,
++        monthlyCost: 0, // already counted in session costs, not a recurring config bleed
++      });
++    } else {
++      findings.push({ severity: 'info', source: 'sessions', message: `Prompt caching active — ${(totalCacheRead + totalCacheWrite).toLocaleString()} cache tokens tracked`, detail: cacheDetail.join(' · ') });
++    }
++  }
++
++  // Transcript coverage finding
++  if (transcriptHits > 0 || transcriptMisses > 0) {
++    const total = transcriptHits + transcriptMisses;
++    if (transcriptMisses > 0 && transcriptHits > 0) {
++      findings.push({ severity: 'info', source: 'sessions', message: `Transcript data: ${transcriptHits}/${total} sessions have .jsonl transcripts (${transcriptMisses} estimated)`, detail: `Sessions with transcripts show real API-reported costs including cache tokens` });
++    }
++  }
++
++  // Cost discrepancy finding
++  if (totalRealCost > 0 && totalCost > 0) {
++    const ratio = totalRealCost / totalCost;
++    if (ratio > 2) {
++      findings.push({
++        severity: 'high',
++        source: 'sessions',
++        message: `Real cost $${totalRealCost.toFixed(4)} is ${ratio.toFixed(1)}x higher than sessions.json estimate ($${totalCost.toFixed(4)})`,
++        detail: `sessions.json only tracks input/output tokens — cache tokens, which are the bulk of real spending, are only in .jsonl transcripts`,
++      });
++    }
++  }
++
++  return {
++    exists: true, findings, sessions: breakdown,
++    totalInputTokens: totalIn, totalOutputTokens: totalOut,
++    totalCost, totalCacheRead, totalCacheWrite, totalRealCost,
++    sessionCount: Object.keys(sessions).length,
++  };
+ }
+ 
+ // ── Workspace analysis ────────────────────────────────────────────
+@@ -568,12 +754,64 @@ async function runAnalysis({ configPath, sessionsPath, logsDir }) {
+   const sessionResult   = analyzeSessions(sessionsPath);
+   const workspaceResult = analyzeWorkspace();
+ 
+-  const allFindings = [...configResult.findings, ...sessionResult.findings, ...workspaceResult.findings];
++  // Scan additional agent folders beyond main
++  const agentDirs = discoverAgentDirs();
++  const additionalAgentSessions = [];
++  for (const { agent, sessionsDir } of agentDirs) {
++    const sjPath = path.join(sessionsDir, 'sessions.json');
++    // Skip the primary sessions path (already analyzed above)
++    if (sjPath === sessionsPath) continue;
++    if (fs.existsSync(sjPath)) {
++      const extra = analyzeSessions(sjPath);
++      if (extra.exists) {
++        additionalAgentSessions.push({ agent, ...extra });
++      }
++    }
++  }
++
++  // Scan web-chat sessions
++  const webChatPaths = discoverWebChatSessions();
++  const webChatSessions = [];
++  for (const wcp of webChatPaths) {
++    const transcript = parseTranscript(wcp);
++    if (transcript) {
++      const sessionId = path.basename(wcp, '.jsonl');
++      webChatSessions.push({ key: `web-chat/${sessionId}`, ...transcript });
++    }
++  }
++
++  // Merge all findings
++  const allFindings = [
++    ...configResult.findings,
++    ...sessionResult.findings,
++    ...workspaceResult.findings,
++  ];
++
++  // Add additional agent findings
++  for (const extra of additionalAgentSessions) {
++    if (extra.findings.length > 0) {
++      allFindings.push({ severity: 'info', source: 'sessions', message: `Agent "${extra.agent}": ${extra.sessionCount} session(s) found`, detail: `Tokens: ${(extra.totalInputTokens + extra.totalOutputTokens).toLocaleString()} · Cost: $${extra.totalRealCost.toFixed(4)}` });
++    }
++    // Merge their sessions into the main breakdown
++    sessionResult.sessions.push(...(extra.sessions || []));
++    sessionResult.totalRealCost += extra.totalRealCost || 0;
++    sessionResult.totalCacheRead += extra.totalCacheRead || 0;
++    sessionResult.totalCacheWrite += extra.totalCacheWrite || 0;
++  }
++
++  // Add web-chat finding if any
++  if (webChatSessions.length > 0) {
++    const wcTotal = webChatSessions.reduce((sum, s) => sum + s.totalCost, 0);
++    const wcTokens = webChatSessions.reduce((sum, s) => sum + s.totalTokens, 0);
++    allFindings.push({ severity: 'info', source: 'sessions', message: `${webChatSessions.length} web-chat session(s) found`, detail: `Tokens: ${wcTokens.toLocaleString()} · Cost: $${wcTotal.toFixed(4)}` });
++  }
+ 
+   const estimatedMonthlyBleed = allFindings
+     .filter(f => f.monthlyCost && f.severity !== 'info')
+     .reduce((sum, f) => sum + f.monthlyCost, 0);
+ 
++  const realCost = sessionResult.totalRealCost || 0;
++
+   return {
+     scannedAt:    new Date().toISOString(),
+     configPath,
+@@ -589,10 +827,15 @@ async function runAnalysis({ configPath, sessionsPath, logsDir }) {
+       estimatedMonthlyBleed,
+       sessionsAnalyzed:      sessionResult.sessionCount,
+       totalTokensFound:      (sessionResult.totalInputTokens || 0) + (sessionResult.totalOutputTokens || 0),
++      totalCacheRead:        sessionResult.totalCacheRead || 0,
++      totalCacheWrite:       sessionResult.totalCacheWrite || 0,
++      totalRealCost:         realCost,
++      totalEstimatedCost:    sessionResult.totalCost || 0,
+     },
+     sessions: sessionResult.sessions || [],
++    webChatSessions,
+     config:   configResult.config,
+   };
+ }
+ 
+-module.exports = { runAnalysis, MODEL_PRICING, resolveModel, costPerCall };
++module.exports = { runAnalysis, MODEL_PRICING, resolveModel, costPerCall, parseTranscript, discoverAgentDirs, discoverWebChatSessions };
+diff --git a/skills/clawculator/htmlReport.js b/skills/clawculator/htmlReport.js
+index 6b944d1..87a692e 100644
+--- a/skills/clawculator/htmlReport.js
++++ b/skills/clawculator/htmlReport.js
+@@ -5,15 +5,15 @@ const path = require('path');
+ const os = require('os');
+ 
+ function severityColor(severity) {
+-  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', info: '#22c55e' }[severity] || '#6b7280';
++  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#06b6d4', info: '#22c55e' }[severity] || '#6b7280';
+ }
+ 
+ function severityBg(severity) {
+-  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', info: '#f0fdf4' }[severity] || '#f9fafb';
++  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', low: '#ecfeff', info: '#f0fdf4' }[severity] || '#f9fafb';
+ }
+ 
+ function severityIcon(severity) {
+-  return { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' }[severity] || '⚪';
++  return { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' }[severity] || '⚪';
+ }
+ 
+ function relativeAge(ageMs) {
+@@ -40,6 +40,25 @@ async function generateHTMLReport(analysis, outPath) {
+   const { summary, findings, sessions } = analysis;
+   const bleed = summary.estimatedMonthlyBleed;
+ 
++  // Burn summary calculation
++  const activeSessions = (sessions || []).filter(s => s.dailyCost);
++  const totalDaily = activeSessions.reduce((sum, s) => sum + (s.dailyCost || 0), 0);
++  const totalMonthly = totalDaily * 30;
++  const burnSummary = totalDaily > 0 ? `
++    <div class="section">
++      <div class="section-title">Session Burn Rate</div>
++      <div style="display:flex; gap:32px; flex-wrap:wrap;">
++        <div>
++          <div style="font-size:24px; font-weight:800; color:#f59e0b;">$${totalDaily.toFixed(4)}/day</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Combined daily burn rate across ${activeSessions.length} active session${activeSessions.length !== 1 ? 's' : ''}</div>
++        </div>
++        <div>
++          <div style="font-size:24px; font-weight:800; color:#f97316;">$${totalMonthly.toFixed(2)}/month</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Projected monthly from active sessions</div>
++        </div>
++      </div>
++    </div>` : '';
++
+   const findingCards = findings.map(f => `
+     <div class="finding" style="border-left: 4px solid ${severityColor(f.severity)}; background: ${severityBg(f.severity)}; padding: 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0;">
+       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+@@ -60,14 +79,16 @@ async function generateHTMLReport(analysis, outPath) {
+     .map(s => {
+       const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
+       const flag = s.isOrphaned ? ' ⚠️' : '';
++      const txBadge = s.hasTranscript ? '<span style="color:#22c55e; font-size:10px; margin-left:4px" title="Cost from .jsonl transcript (API-reported)">●</span>' : '<span style="color:#6b7280; font-size:10px; margin-left:4px" title="Estimated cost (no transcript found)">○</span>';
+       const age = s.ageMs ? relativeAge(s.ageMs) : 'unknown';
+       const absDate = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '';
+       const daily = s.dailyCost ? `$${s.dailyCost.toFixed(4)}/day` : '—';
++      const cacheTitle = (s.cacheRead || s.cacheWrite) ? `Cache R: ${(s.cacheRead||0).toLocaleString()} · W: ${(s.cacheWrite||0).toLocaleString()}` : '';
+       return `
+       <tr style="${s.isOrphaned ? 'background:#fff7ed' : ''}">
+-        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${keyDisplay}${flag}</td>
++        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${keyDisplay}${flag}${txBadge}</td>
+         <td style="padding:8px 12px">${s.modelLabel || s.model}</td>
+-        <td style="padding:8px 12px; text-align:right">${(s.inputTokens + s.outputTokens).toLocaleString()}</td>
++        <td style="padding:8px 12px; text-align:right" title="${cacheTitle}">${(s.inputTokens + s.outputTokens).toLocaleString()}${(s.cacheRead || s.cacheWrite) ? `<span style="color:#6b7280; font-size:11px;"> +${((s.cacheRead||0)+(s.cacheWrite||0)).toLocaleString()} cache</span>` : ''}</td>
+         <td style="padding:8px 12px; text-align:right; color:${s.cost > 0.01 ? '#ef4444' : '#22c55e'}">$${s.cost.toFixed(6)}</td>
+         <td style="padding:8px 12px; text-align:right; color:#f59e0b">${daily}</td>
+         <td style="padding:8px 12px; color:#6b7280; font-size:13px" title="${absDate}">${age}</td>
+@@ -87,7 +108,7 @@ async function generateHTMLReport(analysis, outPath) {
+     .logo { font-size: 42px; font-weight: 900; letter-spacing: -2px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+     .tagline { color: #94a3b8; margin-top: 8px; font-size: 16px; }
+     .container { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
+-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
++    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 32px; }
+     .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+     .card-value { font-size: 32px; font-weight: 800; }
+     .card-label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+@@ -119,6 +140,27 @@ async function generateHTMLReport(analysis, outPath) {
+       <div style="color:#86efac; font-size:18px; font-weight:700">✅ No significant cost bleed detected</div>
+     </div>`}
+ 
++    ${summary.totalRealCost > 0 ? `
++    <div class="section" style="border:1px solid #f59e0b;">
++      <div class="section-title" style="color:#f59e0b;">💰 Actual API Spend (from transcripts)</div>
++      <div style="display:flex; gap:32px; flex-wrap:wrap; align-items:center;">
++        <div>
++          <div style="font-size:36px; font-weight:900; color:#fbbf24;">$${summary.totalRealCost.toFixed(4)}</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Total real cost (API-reported)</div>
++        </div>
++        ${summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1 ? `
++        <div style="background:#451a03; padding:10px 16px; border-radius:8px; border:1px solid #92400e;">
++          <div style="font-size:14px; color:#fbbf24; font-weight:600;">${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x higher than sessions.json estimate</div>
++          <div style="font-size:12px; color:#d97706; margin-top:2px;">sessions.json: $${summary.totalEstimatedCost.toFixed(4)} — missing cache token costs</div>
++        </div>` : ''}
++      </div>
++      ${summary.totalCacheRead > 0 || summary.totalCacheWrite > 0 ? `
++      <div style="margin-top:16px; display:flex; gap:24px; flex-wrap:wrap;">
++        ${summary.totalCacheWrite > 0 ? `<div style="color:#f97316; font-size:14px;">📝 Cache writes: <strong>${summary.totalCacheWrite.toLocaleString()}</strong> tokens</div>` : ''}
++        ${summary.totalCacheRead > 0 ? `<div style="color:#22c55e; font-size:14px;">📖 Cache reads: <strong>${summary.totalCacheRead.toLocaleString()}</strong> tokens</div>` : ''}
++      </div>` : ''}
++    </div>` : ''}
++
+     <div class="cards">
+       <div class="card">
+         <div class="card-value" style="color:#ef4444">${summary.critical}</div>
+@@ -132,6 +174,10 @@ async function generateHTMLReport(analysis, outPath) {
+         <div class="card-value" style="color:#eab308">${summary.medium}</div>
+         <div class="card-label">🟡 Medium</div>
+       </div>
++      <div class="card">
++        <div class="card-value" style="color:#06b6d4">${summary.low || 0}</div>
++        <div class="card-label">🔵 Low</div>
++      </div>
+       <div class="card">
+         <div class="card-value" style="color:#22c55e">${summary.info}</div>
+         <div class="card-label">✅ OK</div>
+@@ -162,7 +208,8 @@ async function generateHTMLReport(analysis, outPath) {
+           <tbody>${sessionRows}</tbody>
+         </table>
+       </div>
+-    </div>` : ''}
++    </div>
++    ${burnSummary}` : ''}
+ 
+   </div>
+   <div class="footer">
+@@ -172,7 +219,7 @@ async function generateHTMLReport(analysis, outPath) {
+ </html>`;
+ 
+   if (!outPath) {
+-    outPath = path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
++    outPath = path.join(process.cwd(), `clawculator-report-${Date.now()}.html`);
+   }
+   fs.writeFileSync(outPath, html, 'utf8');
+   return outPath;
+diff --git a/skills/clawculator/mdReport.js b/skills/clawculator/mdReport.js
+index 0f8971c..bdab93f 100644
+--- a/skills/clawculator/mdReport.js
++++ b/skills/clawculator/mdReport.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' };
++const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' };
+ const SOURCE_LABELS = {
+   heartbeat: '💓 Heartbeat', hooks: '🪝 Hooks', whatsapp: '📱 WhatsApp',
+   subagents: '🤖 Subagents', skills: '🔧 Skills', memory: '🧠 Memory',
+@@ -56,6 +56,7 @@ function generateMarkdownReport(analysis) {
+   lines.push(`| 🔴 Critical | ${summary.critical} |`);
+   lines.push(`| 🟠 High | ${summary.high} |`);
+   lines.push(`| 🟡 Medium | ${summary.medium} |`);
++  lines.push(`| 🔵 Low | ${summary.low || 0} |`);
+   lines.push(`| ✅ OK | ${summary.info} |`);
+   lines.push(`| Sessions analyzed | ${summary.sessionsAnalyzed} |`);
+   lines.push(`| Total tokens found | ${(summary.totalTokensFound || 0).toLocaleString()} |`);
+@@ -68,13 +69,21 @@ function generateMarkdownReport(analysis) {
+     if (totalCost > 0)      lines.push(`| Total session cost (lifetime) | $${totalCost.toFixed(4)} |`);
+     if (totalDailyRate > 0) lines.push(`| Avg daily burn rate | $${totalDailyRate.toFixed(4)}/day (~$${(totalDailyRate * 30).toFixed(2)}/month) |`);
+   }
++  if (summary.totalRealCost > 0) {
++    lines.push(`| 💰 **Actual API spend** | **$${summary.totalRealCost.toFixed(4)}** |`);
++    if (summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1) {
++      lines.push(`| sessions.json estimate | $${summary.totalEstimatedCost.toFixed(4)} (${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x gap) |`);
++    }
++  }
++  if (summary.totalCacheWrite > 0) lines.push(`| Cache writes | ${summary.totalCacheWrite.toLocaleString()} tokens |`);
++  if (summary.totalCacheRead > 0)  lines.push(`| Cache reads | ${summary.totalCacheRead.toLocaleString()} tokens |`);
+   lines.push('');
+ 
+   // Findings by severity
+   lines.push('## Findings');
+   lines.push('');
+ 
+-  for (const severity of ['critical', 'high', 'medium', 'info']) {
++  for (const severity of ['critical', 'high', 'medium', 'low', 'info']) {
+     const group = findings.filter(f => f.severity === severity);
+     if (!group.length) continue;
+ 
+diff --git a/skills/clawculator/reporter.js b/skills/clawculator/reporter.js
+index 8e35519..9e8b694 100644
+--- a/skills/clawculator/reporter.js
++++ b/skills/clawculator/reporter.js
+@@ -115,6 +115,15 @@ function generateTerminalReport(analysis) {
+   console.log(`${C}━━━ Summary ━━━${R}`);
+   console.log(`  🔴 ${RED}${summary.critical}${R} critical  🟠 ${summary.high} high  🟡 ${summary.medium} medium  🔵 ${summary.low||0} low  ✅ ${summary.info} ok`);
+   console.log(`  Sessions analyzed: ${summary.sessionsAnalyzed} · Tokens found: ${(summary.totalTokensFound||0).toLocaleString()}`);
++  if (summary.totalCacheRead > 0 || summary.totalCacheWrite > 0) {
++    console.log(`  ${D}Cache tokens: ${(summary.totalCacheRead||0).toLocaleString()} read · ${(summary.totalCacheWrite||0).toLocaleString()} write${R}`);
++  }
++  if (summary.totalRealCost > 0) {
++    console.log(`  ${B}Actual API spend: ${RED}$${summary.totalRealCost.toFixed(4)}${R}${B} (from .jsonl transcripts)${R}`);
++    if (summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1) {
++      console.log(`  ${D}sessions.json estimate: $${summary.totalEstimatedCost.toFixed(4)} — ${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x gap (cache tokens)${R}`);
++    }
++  }
+   if (bleed > 0) {
+     console.log(`  ${RED}${B}Estimated monthly bleed: $${bleed.toFixed(2)}/month${R}`);
+   } else {
+diff --git a/src/analyzer.js b/src/analyzer.js
+index 9c5b3b9..dfe3ab6 100644
+--- a/src/analyzer.js
++++ b/src/analyzer.js
+@@ -143,7 +143,12 @@ function isLocalModel(modelStr) {
+ 
+ function isHaikuTier(modelStr) {
+   if (!modelStr) return false;
+-  return modelStr.toLowerCase().includes('haiku');
++  const lower = modelStr.toLowerCase();
++  return lower.includes('haiku');
++}
++
++function isAcceptableForHooks(modelStr) {
++  return isLocalModel(modelStr) || isHaikuTier(modelStr);
+ }
+ 
+ function isOpenRouter(modelStr) {
+@@ -495,14 +500,110 @@ function analyzeConfig(configPath) {
+ }
+ 
+ // ── Session analysis ──────────────────────────────────────────────
++
++/**
++ * Parse a .jsonl session transcript file and sum up real usage/cost data.
++ * Returns { input, output, cacheRead, cacheWrite, totalTokens, totalCost, messageCount, model, firstTs, lastTs }
++ */
++function parseTranscript(jsonlPath) {
++  try {
++    const content = fs.readFileSync(jsonlPath, 'utf8').trim();
++    if (!content) return null;
++
++    let input = 0, output = 0, cacheRead = 0, cacheWrite = 0, totalTokens = 0, totalCost = 0;
++    let messageCount = 0, model = null, firstTs = null, lastTs = null;
++
++    for (const line of content.split('\n')) {
++      if (!line.trim()) continue;
++      let entry;
++      try { entry = JSON.parse(line); } catch { continue; }
++
++      // Track timestamps from all message types
++      const ts = entry.timestamp || entry.message?.timestamp;
++      if (ts) {
++        const t = typeof ts === 'number' ? ts : new Date(ts).getTime();
++        if (!firstTs || t < firstTs) firstTs = t;
++        if (!lastTs  || t > lastTs)  lastTs = t;
++      }
++
++      // Only assistant messages with usage blocks have cost data
++      if (entry.type !== 'message') continue;
++      if (!entry.usage) continue;
++
++      messageCount++;
++      const u = entry.usage;
++
++      // Use model from transcript (most accurate)
++      if (entry.model && !model) model = entry.model;
++
++      input       += u.input       || 0;
++      output      += u.output      || 0;
++      cacheRead   += u.cacheRead   || 0;
++      cacheWrite  += u.cacheWrite  || 0;
++      totalTokens += u.totalTokens || 0;
++
++      // Prefer API-reported cost (already accounts for cache pricing)
++      if (u.cost) {
++        if (typeof u.cost === 'object' && u.cost.total != null) {
++          totalCost += u.cost.total;
++        } else if (typeof u.cost === 'number') {
++          totalCost += u.cost;
++        }
++      }
++    }
++
++    if (messageCount === 0) return null;
++
++    return { input, output, cacheRead, cacheWrite, totalTokens, totalCost, messageCount, model, firstTs, lastTs };
++  } catch {
++    return null;
++  }
++}
++
++/**
++ * Discover all agent session directories (not just main).
++ */
++function discoverAgentDirs() {
++  const agentsDir = path.join(os.homedir(), '.openclaw', 'agents');
++  const dirs = [];
++  try {
++    for (const agent of fs.readdirSync(agentsDir)) {
++      const sessionsDir = path.join(agentsDir, agent, 'sessions');
++      if (fs.existsSync(sessionsDir) && fs.statSync(sessionsDir).isDirectory()) {
++        dirs.push({ agent, sessionsDir });
++      }
++    }
++  } catch { /* agents dir doesn't exist */ }
++  return dirs;
++}
++
++/**
++ * Discover web-chat session transcripts.
++ */
++function discoverWebChatSessions() {
++  const webChatDir = path.join(os.homedir(), '.openclaw', 'web-chat');
++  const sessions = [];
++  try {
++    for (const file of fs.readdirSync(webChatDir)) {
++      if (file.endsWith('.jsonl')) {
++        sessions.push(path.join(webChatDir, file));
++      }
++    }
++  } catch { /* web-chat dir doesn't exist */ }
++  return sessions;
++}
++
+ function analyzeSessions(sessionsPath) {
+   const findings = [];
+   const sessions = readJSON(sessionsPath);
++  const sessionsDir = sessionsPath ? path.dirname(sessionsPath) : null;
+ 
+-  if (!sessions) return { exists: false, findings: [], sessions: [], totalInputTokens: 0, totalOutputTokens: 0, totalCost: 0, sessionCount: 0 };
++  if (!sessions) return { exists: false, findings: [], sessions: [], totalInputTokens: 0, totalOutputTokens: 0, totalCost: 0, totalCacheRead: 0, totalCacheWrite: 0, totalRealCost: 0, sessionCount: 0 };
+ 
+   let totalIn = 0, totalOut = 0, totalCost = 0;
++  let totalCacheRead = 0, totalCacheWrite = 0, totalRealCost = 0;
+   const breakdown = [], orphaned = [], large = [];
++  let transcriptHits = 0, transcriptMisses = 0;
+ 
+   for (const key of Object.keys(sessions)) {
+     const s        = sessions[key];
+@@ -510,27 +611,121 @@ function analyzeSessions(sessionsPath) {
+     const modelKey = resolveModel(model);
+     const inTok    = s.inputTokens  || s.tokensIn  || s.tokens?.input  || 0;
+     const outTok   = s.outputTokens || s.tokensOut || s.tokens?.output || 0;
+-    const cost     = costPerCall(modelKey, inTok, outTok);
++    const estimatedCost = costPerCall(modelKey, inTok, outTok);
+     const updatedAt = s.updatedAt || s.lastActive || null;
+ 
+-    totalIn   += inTok;
+-    totalOut  += outTok;
+-    totalCost += cost;
++    // Try to load transcript for real cost data
++    let transcript = null;
++    if (sessionsDir) {
++      const jsonlPath = path.join(sessionsDir, `${key}.jsonl`);
++      transcript = parseTranscript(jsonlPath);
++    }
++
++    // Use transcript data when available, fall back to sessions.json estimates
++    let realIn, realOut, realCacheRead, realCacheWrite, realCost, realModel, realTotalTokens;
++    if (transcript) {
++      transcriptHits++;
++      realIn         = transcript.input;
++      realOut        = transcript.output;
++      realCacheRead  = transcript.cacheRead;
++      realCacheWrite = transcript.cacheWrite;
++      realCost       = transcript.totalCost;
++      realModel      = transcript.model || model;
++      realTotalTokens = transcript.totalTokens;
++    } else {
++      transcriptMisses++;
++      realIn         = inTok;
++      realOut        = outTok;
++      realCacheRead  = 0;
++      realCacheWrite = 0;
++      realCost       = estimatedCost;
++      realModel      = model;
++      realTotalTokens = inTok + outTok;
++    }
++
++    totalIn         += realIn;
++    totalOut        += realOut;
++    totalCacheRead  += realCacheRead;
++    totalCacheWrite += realCacheWrite;
++    totalCost       += estimatedCost;
++    totalRealCost   += realCost;
++
++    const allTokens = realTotalTokens || (realIn + realOut + realCacheRead + realCacheWrite);
+ 
+     const isOrphaned = key.includes('cron') || key.includes('deleted') ||
+       (updatedAt && Date.now() - new Date(updatedAt).getTime() > 48 * 3600 * 1000 && !key.includes('main'));
+ 
+-    if (isOrphaned) orphaned.push({ key, model, tokens: inTok + outTok, cost });
+-    if (inTok + outTok > 50000) large.push({ key, model, tokens: inTok + outTok });
+-
+-    breakdown.push({ key, model, modelLabel: modelKey ? (MODEL_PRICING[modelKey]?.label || modelKey) : 'unknown', inputTokens: inTok, outputTokens: outTok, cost, updatedAt, isOrphaned });
++    if (isOrphaned) orphaned.push({ key, model: realModel, tokens: allTokens, cost: realCost });
++    if (allTokens > 50000) large.push({ key, model: realModel, tokens: allTokens });
++
++    const ageMs    = updatedAt ? Date.now() - new Date(updatedAt).getTime() : null;
++    const ageDays  = ageMs ? ageMs / (1000 * 3600 * 24) : null;
++    const dailyCost = (ageDays && ageDays > 0.01 && realCost > 0) ? realCost / ageDays : null;
++
++    const realModelKey = resolveModel(realModel);
++    breakdown.push({
++      key, model: realModel,
++      modelLabel: realModelKey ? (MODEL_PRICING[realModelKey]?.label || realModelKey) : (modelKey ? (MODEL_PRICING[modelKey]?.label || modelKey) : 'unknown'),
++      inputTokens: realIn, outputTokens: realOut,
++      cacheRead: realCacheRead, cacheWrite: realCacheWrite,
++      cost: realCost, estimatedCost,
++      hasTranscript: !!transcript,
++      messageCount: transcript?.messageCount || 0,
++      updatedAt, ageMs, dailyCost, isOrphaned,
++    });
+   }
+ 
++  // Findings
+   if (orphaned.length > 0) findings.push({ severity: 'high', source: 'sessions', message: `${orphaned.length} orphaned session(s) — still holding tokens on paid models`, detail: orphaned.map(s => `${s.key}: ${s.tokens.toLocaleString()} tokens ($${s.cost.toFixed(4)})`).join('\n  '), ...FIXES.ORPHANED_SESSIONS });
+   if (large.length > 0) findings.push({ severity: 'medium', source: 'sessions', message: `${large.length} session(s) with >50k tokens per conversation`, detail: large.map(s => `${s.key}: ${s.tokens.toLocaleString()} tokens`).join('\n  '), ...FIXES.LARGE_SESSIONS });
+   if (Object.keys(sessions).length > 0 && !orphaned.length && !large.length) findings.push({ severity: 'info', source: 'sessions', message: `${Object.keys(sessions).length} session(s) healthy ✓`, detail: `Total tokens: ${(totalIn + totalOut).toLocaleString()}` });
+ 
+-  return { exists: true, findings, sessions: breakdown, totalInputTokens: totalIn, totalOutputTokens: totalOut, totalCost, sessionCount: Object.keys(sessions).length };
++  // Cache cost finding
++  if (totalCacheWrite > 0 || totalCacheRead > 0) {
++    const cacheDetail = [];
++    if (totalCacheRead > 0)  cacheDetail.push(`Cache reads: ${totalCacheRead.toLocaleString()} tokens`);
++    if (totalCacheWrite > 0) cacheDetail.push(`Cache writes: ${totalCacheWrite.toLocaleString()} tokens`);
++    const cacheCostPortion = totalRealCost - totalCost;
++    if (cacheCostPortion > 0.01) {
++      findings.push({
++        severity: cacheCostPortion > 1 ? 'high' : 'medium',
++        source: 'sessions',
++        message: `Prompt caching added $${cacheCostPortion.toFixed(4)} beyond base token costs`,
++        detail: cacheDetail.join('\n  ') + `\n  Cache writes are 3.75x input cost · Cache reads are 0.1x input cost`,
++        monthlyCost: 0, // already counted in session costs, not a recurring config bleed
++      });
++    } else {
++      findings.push({ severity: 'info', source: 'sessions', message: `Prompt caching active — ${(totalCacheRead + totalCacheWrite).toLocaleString()} cache tokens tracked`, detail: cacheDetail.join(' · ') });
++    }
++  }
++
++  // Transcript coverage finding
++  if (transcriptHits > 0 || transcriptMisses > 0) {
++    const total = transcriptHits + transcriptMisses;
++    if (transcriptMisses > 0 && transcriptHits > 0) {
++      findings.push({ severity: 'info', source: 'sessions', message: `Transcript data: ${transcriptHits}/${total} sessions have .jsonl transcripts (${transcriptMisses} estimated)`, detail: `Sessions with transcripts show real API-reported costs including cache tokens` });
++    }
++  }
++
++  // Cost discrepancy finding
++  if (totalRealCost > 0 && totalCost > 0) {
++    const ratio = totalRealCost / totalCost;
++    if (ratio > 2) {
++      findings.push({
++        severity: 'high',
++        source: 'sessions',
++        message: `Real cost $${totalRealCost.toFixed(4)} is ${ratio.toFixed(1)}x higher than sessions.json estimate ($${totalCost.toFixed(4)})`,
++        detail: `sessions.json only tracks input/output tokens — cache tokens, which are the bulk of real spending, are only in .jsonl transcripts`,
++      });
++    }
++  }
++
++  return {
++    exists: true, findings, sessions: breakdown,
++    totalInputTokens: totalIn, totalOutputTokens: totalOut,
++    totalCost, totalCacheRead, totalCacheWrite, totalRealCost,
++    sessionCount: Object.keys(sessions).length,
++  };
+ }
+ 
+ // ── Workspace analysis ────────────────────────────────────────────
+@@ -559,12 +754,64 @@ async function runAnalysis({ configPath, sessionsPath, logsDir }) {
+   const sessionResult   = analyzeSessions(sessionsPath);
+   const workspaceResult = analyzeWorkspace();
+ 
+-  const allFindings = [...configResult.findings, ...sessionResult.findings, ...workspaceResult.findings];
++  // Scan additional agent folders beyond main
++  const agentDirs = discoverAgentDirs();
++  const additionalAgentSessions = [];
++  for (const { agent, sessionsDir } of agentDirs) {
++    const sjPath = path.join(sessionsDir, 'sessions.json');
++    // Skip the primary sessions path (already analyzed above)
++    if (sjPath === sessionsPath) continue;
++    if (fs.existsSync(sjPath)) {
++      const extra = analyzeSessions(sjPath);
++      if (extra.exists) {
++        additionalAgentSessions.push({ agent, ...extra });
++      }
++    }
++  }
++
++  // Scan web-chat sessions
++  const webChatPaths = discoverWebChatSessions();
++  const webChatSessions = [];
++  for (const wcp of webChatPaths) {
++    const transcript = parseTranscript(wcp);
++    if (transcript) {
++      const sessionId = path.basename(wcp, '.jsonl');
++      webChatSessions.push({ key: `web-chat/${sessionId}`, ...transcript });
++    }
++  }
++
++  // Merge all findings
++  const allFindings = [
++    ...configResult.findings,
++    ...sessionResult.findings,
++    ...workspaceResult.findings,
++  ];
++
++  // Add additional agent findings
++  for (const extra of additionalAgentSessions) {
++    if (extra.findings.length > 0) {
++      allFindings.push({ severity: 'info', source: 'sessions', message: `Agent "${extra.agent}": ${extra.sessionCount} session(s) found`, detail: `Tokens: ${(extra.totalInputTokens + extra.totalOutputTokens).toLocaleString()} · Cost: $${extra.totalRealCost.toFixed(4)}` });
++    }
++    // Merge their sessions into the main breakdown
++    sessionResult.sessions.push(...(extra.sessions || []));
++    sessionResult.totalRealCost += extra.totalRealCost || 0;
++    sessionResult.totalCacheRead += extra.totalCacheRead || 0;
++    sessionResult.totalCacheWrite += extra.totalCacheWrite || 0;
++  }
++
++  // Add web-chat finding if any
++  if (webChatSessions.length > 0) {
++    const wcTotal = webChatSessions.reduce((sum, s) => sum + s.totalCost, 0);
++    const wcTokens = webChatSessions.reduce((sum, s) => sum + s.totalTokens, 0);
++    allFindings.push({ severity: 'info', source: 'sessions', message: `${webChatSessions.length} web-chat session(s) found`, detail: `Tokens: ${wcTokens.toLocaleString()} · Cost: $${wcTotal.toFixed(4)}` });
++  }
+ 
+   const estimatedMonthlyBleed = allFindings
+     .filter(f => f.monthlyCost && f.severity !== 'info')
+     .reduce((sum, f) => sum + f.monthlyCost, 0);
+ 
++  const realCost = sessionResult.totalRealCost || 0;
++
+   return {
+     scannedAt:    new Date().toISOString(),
+     configPath,
+@@ -575,14 +822,20 @@ async function runAnalysis({ configPath, sessionsPath, logsDir }) {
+       critical:              allFindings.filter(f => f.severity === 'critical').length,
+       high:                  allFindings.filter(f => f.severity === 'high').length,
+       medium:                allFindings.filter(f => f.severity === 'medium').length,
++      low:                   allFindings.filter(f => f.severity === 'low').length,
+       info:                  allFindings.filter(f => f.severity === 'info').length,
+       estimatedMonthlyBleed,
+       sessionsAnalyzed:      sessionResult.sessionCount,
+       totalTokensFound:      (sessionResult.totalInputTokens || 0) + (sessionResult.totalOutputTokens || 0),
++      totalCacheRead:        sessionResult.totalCacheRead || 0,
++      totalCacheWrite:       sessionResult.totalCacheWrite || 0,
++      totalRealCost:         realCost,
++      totalEstimatedCost:    sessionResult.totalCost || 0,
+     },
+     sessions: sessionResult.sessions || [],
++    webChatSessions,
+     config:   configResult.config,
+   };
+ }
+ 
+-module.exports = { runAnalysis, MODEL_PRICING, resolveModel, costPerCall };
++module.exports = { runAnalysis, MODEL_PRICING, resolveModel, costPerCall, parseTranscript, discoverAgentDirs, discoverWebChatSessions };
+diff --git a/src/htmlReport.js b/src/htmlReport.js
+index 30cae47..87a692e 100644
+--- a/src/htmlReport.js
++++ b/src/htmlReport.js
+@@ -5,15 +5,28 @@ const path = require('path');
+ const os = require('os');
+ 
+ function severityColor(severity) {
+-  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', info: '#22c55e' }[severity] || '#6b7280';
++  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#06b6d4', info: '#22c55e' }[severity] || '#6b7280';
+ }
+ 
+ function severityBg(severity) {
+-  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', info: '#f0fdf4' }[severity] || '#f9fafb';
++  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', low: '#ecfeff', info: '#f0fdf4' }[severity] || '#f9fafb';
+ }
+ 
+ function severityIcon(severity) {
+-  return { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' }[severity] || '⚪';
++  return { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' }[severity] || '⚪';
++}
++
++function relativeAge(ageMs) {
++  if (!ageMs) return 'unknown';
++  const s = Math.floor(ageMs / 1000);
++  if (s < 60)        return `${s}s ago`;
++  const m = Math.floor(s / 60);
++  if (m < 60)        return `${m}m ago`;
++  const h = Math.floor(m / 60);
++  if (h < 24)        return `${h}h ago`;
++  const d = Math.floor(h / 24);
++  if (d < 30)        return `${d}d ago`;
++  return `${Math.floor(d / 30)}mo ago`;
+ }
+ 
+ const SOURCE_LABELS = {
+@@ -27,6 +40,25 @@ async function generateHTMLReport(analysis, outPath) {
+   const { summary, findings, sessions } = analysis;
+   const bleed = summary.estimatedMonthlyBleed;
+ 
++  // Burn summary calculation
++  const activeSessions = (sessions || []).filter(s => s.dailyCost);
++  const totalDaily = activeSessions.reduce((sum, s) => sum + (s.dailyCost || 0), 0);
++  const totalMonthly = totalDaily * 30;
++  const burnSummary = totalDaily > 0 ? `
++    <div class="section">
++      <div class="section-title">Session Burn Rate</div>
++      <div style="display:flex; gap:32px; flex-wrap:wrap;">
++        <div>
++          <div style="font-size:24px; font-weight:800; color:#f59e0b;">$${totalDaily.toFixed(4)}/day</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Combined daily burn rate across ${activeSessions.length} active session${activeSessions.length !== 1 ? 's' : ''}</div>
++        </div>
++        <div>
++          <div style="font-size:24px; font-weight:800; color:#f97316;">$${totalMonthly.toFixed(2)}/month</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Projected monthly from active sessions</div>
++        </div>
++      </div>
++    </div>` : '';
++
+   const findingCards = findings.map(f => `
+     <div class="finding" style="border-left: 4px solid ${severityColor(f.severity)}; background: ${severityBg(f.severity)}; padding: 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0;">
+       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+@@ -44,14 +76,24 @@ async function generateHTMLReport(analysis, outPath) {
+   const sessionRows = (sessions || [])
+     .sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
+     .slice(0, 20)
+-    .map(s => `
++    .map(s => {
++      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
++      const flag = s.isOrphaned ? ' ⚠️' : '';
++      const txBadge = s.hasTranscript ? '<span style="color:#22c55e; font-size:10px; margin-left:4px" title="Cost from .jsonl transcript (API-reported)">●</span>' : '<span style="color:#6b7280; font-size:10px; margin-left:4px" title="Estimated cost (no transcript found)">○</span>';
++      const age = s.ageMs ? relativeAge(s.ageMs) : 'unknown';
++      const absDate = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '';
++      const daily = s.dailyCost ? `$${s.dailyCost.toFixed(4)}/day` : '—';
++      const cacheTitle = (s.cacheRead || s.cacheWrite) ? `Cache R: ${(s.cacheRead||0).toLocaleString()} · W: ${(s.cacheWrite||0).toLocaleString()}` : '';
++      return `
+       <tr style="${s.isOrphaned ? 'background:#fff7ed' : ''}">
+-        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${s.key}${s.isOrphaned ? ' ⚠️' : ''}</td>
++        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${keyDisplay}${flag}${txBadge}</td>
+         <td style="padding:8px 12px">${s.modelLabel || s.model}</td>
+-        <td style="padding:8px 12px; text-align:right">${(s.inputTokens + s.outputTokens).toLocaleString()}</td>
++        <td style="padding:8px 12px; text-align:right" title="${cacheTitle}">${(s.inputTokens + s.outputTokens).toLocaleString()}${(s.cacheRead || s.cacheWrite) ? `<span style="color:#6b7280; font-size:11px;"> +${((s.cacheRead||0)+(s.cacheWrite||0)).toLocaleString()} cache</span>` : ''}</td>
+         <td style="padding:8px 12px; text-align:right; color:${s.cost > 0.01 ? '#ef4444' : '#22c55e'}">$${s.cost.toFixed(6)}</td>
++        <td style="padding:8px 12px; text-align:right; color:#f59e0b">${daily}</td>
++        <td style="padding:8px 12px; color:#6b7280; font-size:13px" title="${absDate}">${age}</td>
+       </tr>
+-    `).join('');
++    `}).join('');
+ 
+   const html = `<!DOCTYPE html>
+ <html lang="en">
+@@ -66,7 +108,7 @@ async function generateHTMLReport(analysis, outPath) {
+     .logo { font-size: 42px; font-weight: 900; letter-spacing: -2px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+     .tagline { color: #94a3b8; margin-top: 8px; font-size: 16px; }
+     .container { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
+-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
++    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 32px; }
+     .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+     .card-value { font-size: 32px; font-weight: 800; }
+     .card-label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+@@ -98,6 +140,27 @@ async function generateHTMLReport(analysis, outPath) {
+       <div style="color:#86efac; font-size:18px; font-weight:700">✅ No significant cost bleed detected</div>
+     </div>`}
+ 
++    ${summary.totalRealCost > 0 ? `
++    <div class="section" style="border:1px solid #f59e0b;">
++      <div class="section-title" style="color:#f59e0b;">💰 Actual API Spend (from transcripts)</div>
++      <div style="display:flex; gap:32px; flex-wrap:wrap; align-items:center;">
++        <div>
++          <div style="font-size:36px; font-weight:900; color:#fbbf24;">$${summary.totalRealCost.toFixed(4)}</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Total real cost (API-reported)</div>
++        </div>
++        ${summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1 ? `
++        <div style="background:#451a03; padding:10px 16px; border-radius:8px; border:1px solid #92400e;">
++          <div style="font-size:14px; color:#fbbf24; font-weight:600;">${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x higher than sessions.json estimate</div>
++          <div style="font-size:12px; color:#d97706; margin-top:2px;">sessions.json: $${summary.totalEstimatedCost.toFixed(4)} — missing cache token costs</div>
++        </div>` : ''}
++      </div>
++      ${summary.totalCacheRead > 0 || summary.totalCacheWrite > 0 ? `
++      <div style="margin-top:16px; display:flex; gap:24px; flex-wrap:wrap;">
++        ${summary.totalCacheWrite > 0 ? `<div style="color:#f97316; font-size:14px;">📝 Cache writes: <strong>${summary.totalCacheWrite.toLocaleString()}</strong> tokens</div>` : ''}
++        ${summary.totalCacheRead > 0 ? `<div style="color:#22c55e; font-size:14px;">📖 Cache reads: <strong>${summary.totalCacheRead.toLocaleString()}</strong> tokens</div>` : ''}
++      </div>` : ''}
++    </div>` : ''}
++
+     <div class="cards">
+       <div class="card">
+         <div class="card-value" style="color:#ef4444">${summary.critical}</div>
+@@ -111,6 +174,10 @@ async function generateHTMLReport(analysis, outPath) {
+         <div class="card-value" style="color:#eab308">${summary.medium}</div>
+         <div class="card-label">🟡 Medium</div>
+       </div>
++      <div class="card">
++        <div class="card-value" style="color:#06b6d4">${summary.low || 0}</div>
++        <div class="card-label">🔵 Low</div>
++      </div>
+       <div class="card">
+         <div class="card-value" style="color:#22c55e">${summary.info}</div>
+         <div class="card-label">✅ OK</div>
+@@ -137,11 +204,12 @@ async function generateHTMLReport(analysis, outPath) {
+       <div class="section-title">Session Breakdown</div>
+       <div style="overflow-x:auto">
+         <table>
+-          <thead><tr><th>Session</th><th>Model</th><th style="text-align:right">Tokens</th><th style="text-align:right">Cost</th></tr></thead>
++          <thead><tr><th>Session</th><th>Model</th><th style="text-align:right">Tokens</th><th style="text-align:right">Total Cost</th><th style="text-align:right">$/day</th><th>Last Active</th></tr></thead>
+           <tbody>${sessionRows}</tbody>
+         </table>
+       </div>
+-    </div>` : ''}
++    </div>
++    ${burnSummary}` : ''}
+ 
+   </div>
+   <div class="footer">
+@@ -151,7 +219,7 @@ async function generateHTMLReport(analysis, outPath) {
+ </html>`;
+ 
+   if (!outPath) {
+-    outPath = path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
++    outPath = path.join(process.cwd(), `clawculator-report-${Date.now()}.html`);
+   }
+   fs.writeFileSync(outPath, html, 'utf8');
+   return outPath;
+diff --git a/src/mdReport.js b/src/mdReport.js
+index 630818e..bdab93f 100644
+--- a/src/mdReport.js
++++ b/src/mdReport.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' };
++const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' };
+ const SOURCE_LABELS = {
+   heartbeat: '💓 Heartbeat', hooks: '🪝 Hooks', whatsapp: '📱 WhatsApp',
+   subagents: '🤖 Subagents', skills: '🔧 Skills', memory: '🧠 Memory',
+@@ -8,6 +8,25 @@ const SOURCE_LABELS = {
+   workspace: '📁 Workspace', config: '📄 Config',
+ };
+ 
++function relativeAge(ageMs) {
++  if (!ageMs) return 'unknown';
++  const s = Math.floor(ageMs / 1000);
++  if (s < 60)          return `${s}s ago`;
++  const m = Math.floor(s / 60);
++  if (m < 60)          return `${m}m ago`;
++  const h = Math.floor(m / 60);
++  if (h < 24)          return `${h}h ago`;
++  const d = Math.floor(h / 24);
++  if (d < 30)          return `${d}d ago`;
++  const mo = Math.floor(d / 30);
++  return `${mo}mo ago`;
++}
++
++function absoluteDate(updatedAt) {
++  if (!updatedAt) return '';
++  return new Date(updatedAt).toLocaleString();
++}
++
+ function generateMarkdownReport(analysis) {
+   const { summary, findings, sessions, primaryModel, scannedAt } = analysis;
+   const bleed = summary.estimatedMonthlyBleed;
+@@ -32,21 +51,39 @@ function generateMarkdownReport(analysis) {
+   // Summary table
+   lines.push('## Summary');
+   lines.push('');
+-  lines.push('| Severity | Count |');
+-  lines.push('|----------|-------|');
++  lines.push('| Metric | Value |');
++  lines.push('|--------|-------|');
+   lines.push(`| 🔴 Critical | ${summary.critical} |`);
+   lines.push(`| 🟠 High | ${summary.high} |`);
+   lines.push(`| 🟡 Medium | ${summary.medium} |`);
++  lines.push(`| 🔵 Low | ${summary.low || 0} |`);
+   lines.push(`| ✅ OK | ${summary.info} |`);
+   lines.push(`| Sessions analyzed | ${summary.sessionsAnalyzed} |`);
+   lines.push(`| Total tokens found | ${(summary.totalTokensFound || 0).toLocaleString()} |`);
++
++  // Session cost summary
++  if (sessions?.length > 0) {
++    const totalCost = sessions.reduce((sum, s) => sum + s.cost, 0);
++    const dailyRates = sessions.filter(s => s.dailyCost).map(s => s.dailyCost);
++    const totalDailyRate = dailyRates.reduce((sum, r) => sum + r, 0);
++    if (totalCost > 0)      lines.push(`| Total session cost (lifetime) | $${totalCost.toFixed(4)} |`);
++    if (totalDailyRate > 0) lines.push(`| Avg daily burn rate | $${totalDailyRate.toFixed(4)}/day (~$${(totalDailyRate * 30).toFixed(2)}/month) |`);
++  }
++  if (summary.totalRealCost > 0) {
++    lines.push(`| 💰 **Actual API spend** | **$${summary.totalRealCost.toFixed(4)}** |`);
++    if (summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1) {
++      lines.push(`| sessions.json estimate | $${summary.totalEstimatedCost.toFixed(4)} (${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x gap) |`);
++    }
++  }
++  if (summary.totalCacheWrite > 0) lines.push(`| Cache writes | ${summary.totalCacheWrite.toLocaleString()} tokens |`);
++  if (summary.totalCacheRead > 0)  lines.push(`| Cache reads | ${summary.totalCacheRead.toLocaleString()} tokens |`);
+   lines.push('');
+ 
+   // Findings by severity
+   lines.push('## Findings');
+   lines.push('');
+ 
+-  for (const severity of ['critical', 'high', 'medium', 'info']) {
++  for (const severity of ['critical', 'high', 'medium', 'low', 'info']) {
+     const group = findings.filter(f => f.severity === severity);
+     if (!group.length) continue;
+ 
+@@ -78,19 +115,24 @@ function generateMarkdownReport(analysis) {
+   if (sessions?.length > 0) {
+     lines.push('## Session Breakdown');
+     lines.push('');
+-    lines.push('| Session | Model | Tokens | Cost |');
+-    lines.push('|---------|-------|--------|------|');
++    lines.push('| Session | Model | Tokens | Total Cost | $/day | Last Active |');
++    lines.push('|---------|-------|--------|-----------|-------|-------------|');
+ 
+     [...sessions]
+       .sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
+       .slice(0, 20)
+       .forEach(s => {
+-        const tok  = (s.inputTokens + s.outputTokens).toLocaleString();
+-        const flag = s.isOrphaned ? ' ⚠️' : '';
+-        lines.push(`| \`${s.key}${flag}\` | ${s.modelLabel || s.model} | ${tok} | $${s.cost.toFixed(6)} |`);
++        const tok        = (s.inputTokens + s.outputTokens).toLocaleString();
++        const flag       = s.isOrphaned ? ' ⚠️' : '';
++        const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
++        const age        = s.ageMs ? `${relativeAge(s.ageMs)} (${absoluteDate(s.updatedAt)})` : 'unknown';
++        const daily      = s.dailyCost ? `$${s.dailyCost.toFixed(4)}` : '—';
++        lines.push(`| \`${keyDisplay}${flag}\` | ${s.modelLabel || s.model} | ${tok} | $${s.cost.toFixed(6)} | ${daily} | ${age} |`);
+       });
+ 
+     lines.push('');
++    lines.push('> ⚠️ = orphaned session · $/day = total cost ÷ session age');
++    lines.push('');
+   }
+ 
+   // Quick wins
+diff --git a/src/reporter.js b/src/reporter.js
+index d850c4a..9e8b694 100644
+--- a/src/reporter.js
++++ b/src/reporter.js
+@@ -36,6 +36,19 @@ function formatCost(cost) {
+   return `\x1b[31m$${cost.toFixed(2)}/mo\x1b[0m`;
+ }
+ 
++function relativeAge(ageMs) {
++  if (!ageMs) return 'unknown';
++  const s = Math.floor(ageMs / 1000);
++  if (s < 60)        return `${s}s ago`;
++  const m = Math.floor(s / 60);
++  if (m < 60)        return `${m}m ago`;
++  const h = Math.floor(m / 60);
++  if (h < 24)        return `${h}h ago`;
++  const d = Math.floor(h / 24);
++  if (d < 30)        return `${d}d ago`;
++  return `${Math.floor(d / 30)}mo ago`;
++}
++
+ function generateTerminalReport(analysis) {
+   const { summary, findings, sessions } = analysis;
+   const R = '\x1b[0m';
+@@ -78,12 +91,22 @@ function generateTerminalReport(analysis) {
+   if (sessions?.length > 0) {
+     console.log(`${C}━━━ Top Sessions by Token Usage ━━━${R}\n`);
+     const sorted = [...sessions].sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens)).slice(0, 8);
+-    console.log(`  ${D}${'Session'.padEnd(42)} ${'Model'.padEnd(22)} ${'Tokens'.padEnd(10)} Cost${R}`);
+-    console.log(`  ${D}${'─'.repeat(85)}${R}`);
++    console.log(`  ${D}${'Session'.padEnd(16)} ${'Model'.padEnd(20)} ${'Tokens'.padEnd(10)} ${'Total Cost'.padEnd(12)} ${'$/day'.padEnd(10)} Last Active${R}`);
++    console.log(`  ${D}${'─'.repeat(95)}${R}`);
+     for (const s of sorted) {
+-      const tok = (s.inputTokens + s.outputTokens).toLocaleString();
+-      const flag = s.isOrphaned ? ' ⚠️' : '';
+-      console.log(`  ${(s.key + flag).slice(0, 42).padEnd(42)} ${(s.modelLabel || s.model || 'unknown').slice(0, 22).padEnd(22)} ${tok.padEnd(10)} $${s.cost.toFixed(6)}`);
++      const tok        = (s.inputTokens + s.outputTokens).toLocaleString();
++      const flag       = s.isOrphaned ? ' ⚠️' : '';
++      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
++      const age        = s.ageMs ? `${relativeAge(s.ageMs)} (${new Date(s.updatedAt).toLocaleDateString()})` : 'unknown';
++      const daily      = s.dailyCost ? `$${s.dailyCost.toFixed(4)}` : '—';
++      console.log(`  ${(keyDisplay + flag).padEnd(16)} ${(s.modelLabel || s.model || 'unknown').slice(0, 20).padEnd(20)} ${tok.padEnd(10)} $${s.cost.toFixed(6).padEnd(11)} ${daily.padEnd(10)} ${D}${age}${R}`);
++    }
++
++    // Daily burn rate summary
++    const totalDailyRate = sessions.filter(s => s.dailyCost).reduce((sum, s) => sum + s.dailyCost, 0);
++    if (totalDailyRate > 0) {
++      console.log();
++      console.log(`  ${D}Combined burn rate: ${R}${RED}$${totalDailyRate.toFixed(4)}/day${R}${D} · ~$${(totalDailyRate * 30).toFixed(2)}/month${R}`);
+     }
+     console.log();
+   }
+@@ -92,8 +115,17 @@ function generateTerminalReport(analysis) {
+   console.log(`${C}━━━ Summary ━━━${R}`);
+   console.log(`  🔴 ${RED}${summary.critical}${R} critical  🟠 ${summary.high} high  🟡 ${summary.medium} medium  🔵 ${summary.low||0} low  ✅ ${summary.info} ok`);
+   console.log(`  Sessions analyzed: ${summary.sessionsAnalyzed} · Tokens found: ${(summary.totalTokensFound||0).toLocaleString()}`);
++  if (summary.totalCacheRead > 0 || summary.totalCacheWrite > 0) {
++    console.log(`  ${D}Cache tokens: ${(summary.totalCacheRead||0).toLocaleString()} read · ${(summary.totalCacheWrite||0).toLocaleString()} write${R}`);
++  }
++  if (summary.totalRealCost > 0) {
++    console.log(`  ${B}Actual API spend: ${RED}$${summary.totalRealCost.toFixed(4)}${R}${B} (from .jsonl transcripts)${R}`);
++    if (summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1) {
++      console.log(`  ${D}sessions.json estimate: $${summary.totalEstimatedCost.toFixed(4)} — ${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x gap (cache tokens)${R}`);
++    }
++  }
+   if (bleed > 0) {
+-    console.log(`  ${RED}${B}Monthly bleed: $${bleed.toFixed(2)}/month${R}`);
++    console.log(`  ${RED}${B}Estimated monthly bleed: $${bleed.toFixed(2)}/month${R}`);
+   } else {
+     console.log(`  ${GRN}No significant cost bleed detected ✓${R}`);
+   }
