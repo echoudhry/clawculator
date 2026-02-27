@@ -348,11 +348,23 @@ function analyzeConfig(configPath) {
   const hookNames = Object.keys(hooks).filter(k => k !== 'enabled' && k !== 'token' && k !== 'path');
   let hookIssues = 0;
 
+  let haikuHooks = 0;
   for (const name of hookNames) {
     const hook = typeof hooks[name] === 'object' ? hooks[name] : {};
     if (hook.enabled === false) continue;
     const hookModel = hook.model || primaryModel;
-    if (!isAcceptableForHooks(hookModel) && resolveModel(hookModel)) {
+    if (isLocalModel(hookModel)) {
+      // local = free, no finding needed
+    } else if (isHaikuTier(hookModel) && resolveModel(hookModel)) {
+      const monthly = costPerCall(resolveModel(hookModel), 1000, 200) * 50 * 30;
+      haikuHooks++;
+      findings.push({
+        severity: 'low', source: 'hooks',
+        message: `Hook "${name}" on Haiku — minimal cost, good choice`,
+        detail: `~50 fires/day estimated · $${monthly.toFixed(2)}/month`,
+        monthlyCost: monthly,
+      });
+    } else if (resolveModel(hookModel)) {
       const monthly = costPerCall(resolveModel(hookModel), 1000, 200) * 50 * 30;
       hookIssues++;
       findings.push({
@@ -364,8 +376,8 @@ function analyzeConfig(configPath) {
       });
     }
   }
-  if (hookNames.length > 0 && hookIssues === 0) {
-    findings.push({ severity: 'info', source: 'hooks', message: `All ${hookNames.length} hooks on Haiku or local models ✓`, monthlyCost: 0 });
+  if (hookNames.length > 0 && hookIssues === 0 && haikuHooks === 0) {
+    findings.push({ severity: 'info', source: 'hooks', message: `All ${hookNames.length} hooks on local models ✓`, monthlyCost: 0 });
   }
 
   // ── WhatsApp ───────────────────────────────────────────────────
@@ -572,6 +584,7 @@ async function runAnalysis({ configPath, sessionsPath, logsDir }) {
       critical:              allFindings.filter(f => f.severity === 'critical').length,
       high:                  allFindings.filter(f => f.severity === 'high').length,
       medium:                allFindings.filter(f => f.severity === 'medium').length,
+      low:                   allFindings.filter(f => f.severity === 'low').length,
       info:                  allFindings.filter(f => f.severity === 'info').length,
       estimatedMonthlyBleed,
       sessionsAnalyzed:      sessionResult.sessionCount,

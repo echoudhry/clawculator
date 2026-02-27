@@ -5,15 +5,15 @@ const path = require('path');
 const os = require('os');
 
 function severityColor(severity) {
-  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', info: '#22c55e' }[severity] || '#6b7280';
+  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#38bdf8', info: '#22c55e' }[severity] || '#6b7280';
 }
 
 function severityBg(severity) {
-  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', info: '#f0fdf4' }[severity] || '#f9fafb';
+  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', low: '#f0f9ff', info: '#f0fdf4' }[severity] || '#f9fafb';
 }
 
 function severityIcon(severity) {
-  return { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' }[severity] || '⚪';
+  return { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' }[severity] || '⚪';
 }
 
 function relativeAge(ageMs) {
@@ -36,7 +36,7 @@ const SOURCE_LABELS = {
   workspace: '📁 Workspace', config: '📄 Config',
 };
 
-async function generateHTMLReport(analysis) {
+async function generateHTMLReport(analysis, outPath) {
   const { summary, findings, sessions } = analysis;
   const bleed = summary.estimatedMonthlyBleed;
 
@@ -136,6 +136,10 @@ async function generateHTMLReport(analysis) {
         <div class="card-label">🟡 Medium</div>
       </div>
       <div class="card">
+        <div class="card-value" style="color:#38bdf8">${summary.low || 0}</div>
+        <div class="card-label">🔵 Low</div>
+      </div>
+      <div class="card">
         <div class="card-value" style="color:#22c55e">${summary.info}</div>
         <div class="card-label">✅ OK</div>
       </div>
@@ -174,9 +178,9 @@ async function generateHTMLReport(analysis) {
 </body>
 </html>`;
 
-  const outPath = path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
-  fs.writeFileSync(outPath, html, 'utf8');
-  return outPath;
+  const finalPath = outPath || path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
+  fs.writeFileSync(finalPath, html, 'utf8');
+  return finalPath;
 }
 
 module.exports = { generateHTMLReport };
