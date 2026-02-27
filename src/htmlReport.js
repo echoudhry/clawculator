@@ -23,7 +23,7 @@ const SOURCE_LABELS = {
   workspace: '📁 Workspace', config: '📄 Config',
 };
 
-async function generateHTMLReport(analysis) {
+async function generateHTMLReport(analysis, outPath) {
   const { summary, findings, sessions } = analysis;
   const bleed = summary.estimatedMonthlyBleed;
 
@@ -150,7 +150,9 @@ async function generateHTMLReport(analysis) {
 </body>
 </html>`;
 
-  const outPath = path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
+  if (!outPath) {
+    outPath = path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
+  }
   fs.writeFileSync(outPath, html, 'utf8');
   return outPath;
 }
