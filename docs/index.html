@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clawculator Demo</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #080c14;
+      font-family: 'Space Grotesk', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      overflow: hidden;
+    }
+
+    /* Ambient background glow */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 500px;
+      background: radial-gradient(ellipse, rgba(56,189,248,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .logo {
+      font-size: 13px;
+      font-family: 'JetBrains Mono', monospace;
+      color: #38bdf8;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      opacity: 0;
+      animation: fadeUp 0.6s ease forwards 0.2s;
+    }
+
+    .tagline {
+      font-size: 28px;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 8px;
+      opacity: 0;
+      animation: fadeUp 0.6s ease forwards 0.4s;
+    }
+
+    .sub {
+      font-size: 14px;
+      color: #475569;
+      font-family: 'JetBrains Mono', monospace;
+      opacity: 0;
+      animation: fadeUp 0.6s ease forwards 0.6s;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Terminal window */
+    .terminal-wrap {
+      width: 100%;
+      max-width: 740px;
+      opacity: 0;
+      animation: fadeUp 0.6s ease forwards 0.8s;
+    }
+
+    .terminal {
+      background: #0d1117;
+      border-radius: 12px;
+      border: 1px solid #1e293b;
+      box-shadow:
+        0 0 0 1px rgba(56,189,248,0.05),
+        0 32px 64px rgba(0,0,0,0.6),
+        0 0 80px rgba(56,189,248,0.04);
+      overflow: hidden;
+    }
+
+    .terminal-bar {
+      background: #161b22;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-red { background: #ff5f57; }
+    .dot-yellow { background: #ffbd2e; }
+    .dot-green { background: #28c840; }
+
+    .terminal-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #475569;
+      margin-left: auto;
+      margin-right: auto;
+      transform: translateX(-24px);
+    }
+
+    .terminal-body {
+      padding: 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      min-height: 420px;
+    }
+
+    .line { display: flex; gap: 8px; margin-bottom: 2px; opacity: 0; }
+    .line.visible { opacity: 1; }
+
+    .prompt { color: #38bdf8; flex-shrink: 0; }
+    .cmd { color: #e2e8f0; }
+    .dim { color: #334155; }
+
+    /* Output lines */
+    .out-blank { height: 8px; opacity: 0; }
+    .out-blank.visible { opacity: 1; }
+
+    .out { opacity: 0; margin-bottom: 1px; }
+    .out.visible { opacity: 1; }
+
+    .c-cyan   { color: #38bdf8; }
+    .c-green  { color: #4ade80; }
+    .c-red    { color: #f87171; }
+    .c-orange { color: #fb923c; }
+    .c-yellow { color: #fbbf24; }
+    .c-purple { color: #a78bfa; }
+    .c-gray   { color: #475569; }
+    .c-white  { color: #f1f5f9; }
+    .c-amber  { color: #fbbf24; }
+    .bold     { font-weight: 700; }
+
+    .banner-line { color: #1e3a5f; font-size: 11px; }
+    .banner-line.lit { color: #38bdf8; }
+
+    /* Cursor blink */
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: #38bdf8;
+      vertical-align: middle;
+      animation: blink 1s step-end infinite;
+      margin-left: 2px;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* Replay button */
+    .replay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 24px;
+      gap: 8px;
+      opacity: 0;
+      animation: fadeUp 0.4s ease forwards 0.2s;
+    }
+
+    .replay-btn {
+      background: transparent;
+      border: 1px solid #1e293b;
+      color: #475569;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      padding: 8px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 1px;
+    }
+    .replay-btn:hover {
+      border-color: #38bdf8;
+      color: #38bdf8;
+      box-shadow: 0 0 16px rgba(56,189,248,0.1);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(56,189,248,0.06);
+      border: 1px solid rgba(56,189,248,0.12);
+      border-radius: 99px;
+      padding: 4px 12px;
+      font-size: 11px;
+      color: #38bdf8;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: 1px;
+      margin-top: 20px;
+      opacity: 0;
+      animation: fadeUp 0.6s ease forwards 1s;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <div class="logo">🦞 Clawculator</div>
+    <div class="tagline">Find out where your API money is going.</div>
+    <div class="sub">100% offline · Zero AI · Pure deterministic logic</div>
+  </div>
+
+  <div class="terminal-wrap">
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="dot dot-red"></div>
+        <div class="dot dot-yellow"></div>
+        <div class="dot dot-green"></div>
+        <div class="terminal-title">zsh — ~/clawd</div>
+      </div>
+      <div class="terminal-body" id="tb">
+
+        <!-- Prompt -->
+        <div class="line" id="l-prompt">
+          <span class="prompt">~/clawd ❯</span>
+          <span class="cmd" id="cmd-text"></span><span class="cursor" id="cursor"></span>
+        </div>
+
+        <!-- ASCII banner -->
+        <div class="out" id="b0"><span class="banner-line lit">   ██████╗██╗      █████╗ ██╗    ██╗ ██████╗ █████╗ ██╗      ██████╗</span></div>
+        <div class="out" id="b1"><span class="banner-line lit">  ██╔════╝██║     ██╔══██╗██║    ██║██╔════╝██╔══██╗██║     ██╔════╝</span></div>
+        <div class="out" id="b2"><span class="banner-line lit">  ██║     ██║     ███████║██║ █╗ ██║██║     ███████║██║     ██║     </span></div>
+        <div class="out" id="b3"><span class="banner-line lit">  ██║     ██║     ██╔══██║██║███╗██║██║     ██╔══██║██║     ██║     </span></div>
+        <div class="out" id="b4"><span class="banner-line lit">  ╚██████╗███████╗██║  ██║╚███╔███╔╝╚██████╗██║  ██║███████╗╚██████╗</span></div>
+        <div class="out" id="b5"><span class="banner-line lit">   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝  ╚═════╝╚═╝  ╚═╝╚══════╝ ╚═════╝</span></div>
+        <div class="out" id="b6"><span class="c-amber bold">  Your friendly penny pincher.</span></div>
+        <div class="out" id="b7"><span class="c-gray">  100% offline · Zero AI · Pure deterministic logic</span></div>
+        <div class="out-blank" id="sp1"></div>
+        <div class="out" id="scan"><span class="c-gray">Scanning your setup...</span></div>
+        <div class="out-blank" id="sp2"></div>
+
+        <!-- Cost banner -->
+        <div class="out" id="cost"><span class="c-red bold">  ⚠  Estimated monthly cost exposure: </span><span class="c-red bold" id="cost-num">$0.00</span><span class="c-red bold">/month</span></div>
+        <div class="out-blank" id="sp3"></div>
+
+        <!-- Findings -->
+        <div class="out" id="f1"><span class="c-orange bold">  🟠 HIGH</span><span class="c-gray">  ·  🪝 Hooks</span></div>
+        <div class="out" id="f2"><span class="c-white">     Hook "boot-md" running on </span><span class="c-red">claude-sonnet-4-5</span><span class="c-white"> — switch to Haiku</span></div>
+        <div class="out" id="f3"><span class="c-gray">     ~50 fires/day · </span><span class="c-red">$2.40/month</span></div>
+        <div class="out" id="f4"><span class="c-green">     → openclaw config set hooks.boot-md.model claude-haiku-4-5-20251001</span></div>
+        <div class="out-blank" id="sp4"></div>
+
+        <div class="out" id="f5"><span class="c-yellow bold">  🟡 MEDIUM</span><span class="c-gray">  ·  🧠 Memory</span></div>
+        <div class="out" id="f6"><span class="c-white">     memoryFlush inherits primary model — consider routing to Haiku</span></div>
+        <div class="out-blank" id="sp5"></div>
+
+        <div class="out" id="f7"><span class="c-yellow bold">  🟡 MEDIUM</span><span class="c-gray">  ·  🖼 Vision</span></div>
+        <div class="out" id="f8"><span class="c-white">     imageMaxDimensionPx 1200 — each screenshot costs 1000–3000 extra tokens</span></div>
+        <div class="out" id="f9"><span class="c-green">     → openclaw config set agents.defaults.imageMaxDimensionPx 800</span></div>
+        <div class="out-blank" id="sp6"></div>
+
+        <!-- All good -->
+        <div class="out" id="g1"><span class="c-green bold">  ✅  💓 Heartbeat on local model (ollama/qwen2.5:0.5b) ✓</span></div>
+        <div class="out" id="g2"><span class="c-green bold">  ✅  📱 WhatsApp groups blocked ✓</span></div>
+        <div class="out" id="g3"><span class="c-green bold">  ✅  🤖 maxConcurrent = 2 ✓</span></div>
+        <div class="out" id="g4"><span class="c-green bold">  ✅  💬 4 session(s) healthy · 329 tokens ✓</span></div>
+        <div class="out-blank" id="sp7"></div>
+
+        <!-- Summary -->
+        <div class="out" id="s1"><span class="c-cyan">  ━━━ Summary ━━━</span></div>
+        <div class="out" id="s2"><span class="c-gray">  🔴 </span><span class="c-red">0</span><span class="c-gray"> critical  🟠 </span><span class="c-orange">1</span><span class="c-gray"> high  🟡 </span><span class="c-yellow">2</span><span class="c-gray"> medium  ✅ </span><span class="c-green">4</span><span class="c-gray"> ok</span></div>
+        <div class="out" id="s3"><span class="c-red bold">  Monthly bleed: $27.45/month</span></div>
+        <div class="out-blank" id="sp8"></div>
+        <div class="out" id="s4"><span class="c-gray">  Tip: --md saves a report your AI agent can read directly</span></div>
+
+      </div>
+    </div>
+
+    <div class="replay" id="replay-wrap" style="display:none">
+      <button class="replay-btn" onclick="startAnimation()">↺ replay</button>
+    </div>
+  </div>
+
+  <div class="badge">npm install -g clawculator &nbsp;·&nbsp; clawhub install clawculator</div>
+
+  <script>
+    const CMD = 'node run.js --md';
+    const COST_TARGET = 27.45;
+
+    const sequence = [
+      // [id, delay_from_prev_ms]
+      ['b0', 80], ['b1', 40], ['b2', 40], ['b3', 40], ['b4', 40], ['b5', 40],
+      ['b6', 60], ['b7', 40],
+      ['sp1', 40], ['scan', 200], ['sp2', 600],
+      ['cost', 0], // cost counter animated separately
+      ['sp3', 800],
+      ['f1', 0], ['f2', 60], ['f3', 60], ['f4', 80],
+      ['sp4', 100],
+      ['f5', 0], ['f6', 60],
+      ['sp5', 100],
+      ['f7', 0], ['f8', 60], ['f9', 80],
+      ['sp6', 100],
+      ['g1', 0], ['g2', 80], ['g3', 80], ['g4', 80],
+      ['sp7', 100],
+      ['s1', 0], ['s2', 80], ['s3', 80],
+      ['sp8', 80], ['s4', 0],
+    ];
+
+    let timeouts = [];
+
+    function clearAll() {
+      timeouts.forEach(clearTimeout);
+      timeouts = [];
+      // hide all output
+      document.querySelectorAll('.out, .out-blank').forEach(el => el.classList.remove('visible'));
+      document.getElementById('cost-num').textContent = '$0.00';
+      document.getElementById('cmd-text').textContent = '';
+      document.getElementById('cursor').style.display = 'inline-block';
+      document.getElementById('replay-wrap').style.display = 'none';
+    }
+
+    function startAnimation() {
+      clearAll();
+
+      // Type the command
+      let i = 0;
+      const typeInterval = setInterval(() => {
+        document.getElementById('cmd-text').textContent = CMD.slice(0, ++i);
+        if (i >= CMD.length) {
+          clearInterval(typeInterval);
+          document.getElementById('cursor').style.display = 'none';
+          // Start showing output after brief pause
+          runSequence();
+        }
+      }, 55);
+    }
+
+    function runSequence() {
+      let elapsed = 300;
+      let costStarted = false;
+
+      sequence.forEach(([id, delay]) => {
+        elapsed += delay;
+        const t = setTimeout(() => {
+          const el = document.getElementById(id);
+          if (el) el.classList.add('visible');
+
+          // Animate cost counter when cost line appears
+          if (id === 'cost' && !costStarted) {
+            costStarted = true;
+            animateCost();
+          }
+        }, elapsed);
+        timeouts.push(t);
+        elapsed += 10;
+      });
+
+      // Show replay after everything
+      const replayT = setTimeout(() => {
+        document.getElementById('replay-wrap').style.display = 'flex';
+      }, elapsed + 600);
+      timeouts.push(replayT);
+    }
+
+    function animateCost() {
+      const el = document.getElementById('cost-num');
+      const duration = 1200;
+      const start = performance.now();
+      function tick(now) {
+        const p = Math.min((now - start) / duration, 1);
+        const ease = 1 - Math.pow(1 - p, 3);
+        el.textContent = '$' + (COST_TARGET * ease).toFixed(2);
+        if (p < 1) requestAnimationFrame(tick);
+        else el.textContent = '$' + COST_TARGET.toFixed(2);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    // Auto-start
+    window.addEventListener('load', () => {
+      setTimeout(startAnimation, 400);
+    });
+  </script>
+</body>
+</html>

@@ -50,7 +50,8 @@ async function generateHTMLReport(analysis) {
       </div>
       <div style="font-weight:600; color:#111; margin-bottom:4px">${f.message}</div>
       ${f.detail ? `<div style="color:#555; font-size:14px; margin-bottom:6px; white-space:pre-line">${f.detail}</div>` : ''}
-      ${f.recommendation ? `<div style="color:#16a34a; font-size:14px; margin-top:8px">→ Fix: ${f.recommendation}</div>` : ''}
+      ${f.fix ? `<div style="color:#16a34a; font-size:14px; margin-top:8px">→ Fix: ${f.fix}</div>` : ''}
+      ${f.command ? `<div style="background:#0f172a; color:#7dd3fc; font-family:monospace; font-size:12px; padding:8px 12px; border-radius:6px; margin-top:8px">${f.command}</div>` : ''}
     </div>
   `).join('');
 
@@ -58,19 +59,19 @@ async function generateHTMLReport(analysis) {
     .sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
     .slice(0, 20)
     .map(s => {
-      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
+      const keyDisplay = s.key.length > 18 ? s.key.slice(0, 16) + '…' : s.key;
       const flag = s.isOrphaned ? ' ⚠️' : '';
       const age = s.ageMs ? relativeAge(s.ageMs) : 'unknown';
       const absDate = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '';
       const daily = s.dailyCost ? `$${s.dailyCost.toFixed(4)}/day` : '—';
       return `
-      <tr style="${s.isOrphaned ? 'background:#fff7ed' : ''}">
-        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${keyDisplay}${flag}</td>
-        <td style="padding:8px 12px">${s.modelLabel || s.model}</td>
-        <td style="padding:8px 12px; text-align:right">${(s.inputTokens + s.outputTokens).toLocaleString()}</td>
+      <tr style="${s.isOrphaned ? 'background:#fff7ed; color:#111;' : ''}">
+        <td style="padding:8px 12px; font-family:monospace; font-size:13px; ${s.isOrphaned ? 'color:#111;' : ''}">${keyDisplay}${flag}</td>
+        <td style="padding:8px 12px; ${s.isOrphaned ? 'color:#111;' : ''}">${s.modelLabel || s.model}</td>
+        <td style="padding:8px 12px; text-align:right; ${s.isOrphaned ? 'color:#111;' : ''}">${(s.inputTokens + s.outputTokens).toLocaleString()}</td>
         <td style="padding:8px 12px; text-align:right; color:${s.cost > 0.01 ? '#ef4444' : '#22c55e'}">$${s.cost.toFixed(6)}</td>
         <td style="padding:8px 12px; text-align:right; color:#f59e0b">${daily}</td>
-        <td style="padding:8px 12px; color:#6b7280; font-size:13px" title="${absDate}">${age}</td>
+        <td style="padding:8px 12px; color:#94a3b8; font-size:13px; ${s.isOrphaned ? 'color:#6b7280;' : ''}" title="${absDate}">${age}</td>
       </tr>
     `}).join('');
 
@@ -94,7 +95,8 @@ async function generateHTMLReport(analysis) {
     .section { background: #1e293b; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #334155; }
     .section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; color: #f1f5f9; }
     table { width: 100%; border-collapse: collapse; }
-    th { background: #0f172a; padding: 10px 12px; text-align: left; font-size: 13px; color: #94a3b8; }
+    th { background: #0f172a; padding: 10px 12px; text-align: left; font-size: 13px; color: #cbd5e1; font-weight: 600; }
+    td { color: #e2e8f0; }
     tr:nth-child(even) { background: #0f172a33; }
     .footer { text-align: center; color: #475569; font-size: 13px; padding: 32px; }
     .bleed { background: linear-gradient(135deg, #7f1d1d, #991b1b); border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; border: 1px solid #ef4444; }

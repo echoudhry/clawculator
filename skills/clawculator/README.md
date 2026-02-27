@@ -10,6 +10,7 @@ AI cost forensics for OpenClaw and multi-model setups. One command. Full analysi
 
 [![npm version](https://badge.fury.io/js/clawculator.svg)](https://badge.fury.io/js/clawculator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Live Demo](https://img.shields.io/badge/demo-live-38bdf8)](https://echoudhry.github.io/clawculator)
 
 ---
 
@@ -18,6 +19,12 @@ AI cost forensics for OpenClaw and multi-model setups. One command. Full analysi
 You set up OpenClaw. It runs great. Then your API bill arrives and you have no idea why it's $150. Was it the heartbeat? A skill running a polling loop? WhatsApp groups processing every message on Sonnet? Orphaned sessions? Hooks on the wrong model?
 
 It could be any of these. Clawculator finds all of them — with zero AI, zero guesswork, and zero data leaving your machine.
+
+---
+
+## [▶ Live Demo](https://echoudhry.github.io/clawculator)
+
+See it run against a real config — findings, fix commands, cost exposure, session breakdown.
 
 ---
 

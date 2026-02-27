@@ -141,6 +141,16 @@ function isLocalModel(modelStr) {
     ['qwen', 'llama', 'mistral', 'phi', 'gemma', 'deepseek', 'kimi'].some(m => lower.includes(m));
 }
 
+function isHaikuTier(modelStr) {
+  if (!modelStr) return false;
+  const lower = modelStr.toLowerCase();
+  return lower.includes('haiku');
+}
+
+function isAcceptableForHooks(modelStr) {
+  return isLocalModel(modelStr) || isHaikuTier(modelStr);
+}
+
 function isOpenRouter(modelStr) {
   return modelStr?.toLowerCase().startsWith('openrouter/');
 }
@@ -342,12 +352,12 @@ function analyzeConfig(configPath) {
     const hook = typeof hooks[name] === 'object' ? hooks[name] : {};
     if (hook.enabled === false) continue;
     const hookModel = hook.model || primaryModel;
-    if (!isLocalModel(hookModel) && resolveModel(hookModel)) {
+    if (!isAcceptableForHooks(hookModel) && resolveModel(hookModel)) {
       const monthly = costPerCall(resolveModel(hookModel), 1000, 200) * 50 * 30;
       hookIssues++;
       findings.push({
         severity: 'high', source: 'hooks',
-        message: `Hook "${name}" running on paid model: ${hookModel || 'primary'}`,
+        message: `Hook "${name}" running on ${hookModel} — switch to Haiku or local`,
         detail: `~50 fires/day estimated · $${monthly.toFixed(2)}/month`,
         monthlyCost: monthly,
         ...FIXES.HOOK_PAID_MODEL(name),
@@ -355,7 +365,7 @@ function analyzeConfig(configPath) {
     }
   }
   if (hookNames.length > 0 && hookIssues === 0) {
-    findings.push({ severity: 'info', source: 'hooks', message: `All ${hookNames.length} hooks on cheap/local models ✓`, monthlyCost: 0 });
+    findings.push({ severity: 'info', source: 'hooks', message: `All ${hookNames.length} hooks on Haiku or local models ✓`, monthlyCost: 0 });
   }
 
   // ── WhatsApp ───────────────────────────────────────────────────
