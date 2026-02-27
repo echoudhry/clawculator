@@ -22,6 +22,13 @@ It could be any of these. Clawculator finds all of them — with zero AI, zero g
 
 ---
 
+## [▶ Live Demo](https://echoudhry.github.io/clawculator)
+
+See it run against a real config — findings, fix commands, cost exposure, session breakdown.
+
+
+---
+
 ## One command
 
 ```bash
