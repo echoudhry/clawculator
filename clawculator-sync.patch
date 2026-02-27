@@ -1,0 +1,452 @@
+diff --git a/skills/clawculator/htmlReport.js b/skills/clawculator/htmlReport.js
+index 6b944d1..05f9616 100644
+--- a/skills/clawculator/htmlReport.js
++++ b/skills/clawculator/htmlReport.js
+@@ -5,15 +5,15 @@ const path = require('path');
+ const os = require('os');
+ 
+ function severityColor(severity) {
+-  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', info: '#22c55e' }[severity] || '#6b7280';
++  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#06b6d4', info: '#22c55e' }[severity] || '#6b7280';
+ }
+ 
+ function severityBg(severity) {
+-  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', info: '#f0fdf4' }[severity] || '#f9fafb';
++  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', low: '#ecfeff', info: '#f0fdf4' }[severity] || '#f9fafb';
+ }
+ 
+ function severityIcon(severity) {
+-  return { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' }[severity] || '⚪';
++  return { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' }[severity] || '⚪';
+ }
+ 
+ function relativeAge(ageMs) {
+@@ -40,6 +40,25 @@ async function generateHTMLReport(analysis, outPath) {
+   const { summary, findings, sessions } = analysis;
+   const bleed = summary.estimatedMonthlyBleed;
+ 
++  // Burn summary calculation
++  const activeSessions = (sessions || []).filter(s => s.dailyCost);
++  const totalDaily = activeSessions.reduce((sum, s) => sum + (s.dailyCost || 0), 0);
++  const totalMonthly = totalDaily * 30;
++  const burnSummary = totalDaily > 0 ? `
++    <div class="section">
++      <div class="section-title">Session Burn Rate</div>
++      <div style="display:flex; gap:32px; flex-wrap:wrap;">
++        <div>
++          <div style="font-size:24px; font-weight:800; color:#f59e0b;">$${totalDaily.toFixed(4)}/day</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Combined daily burn rate across ${activeSessions.length} active session${activeSessions.length !== 1 ? 's' : ''}</div>
++        </div>
++        <div>
++          <div style="font-size:24px; font-weight:800; color:#f97316;">$${totalMonthly.toFixed(2)}/month</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Projected monthly from active sessions</div>
++        </div>
++      </div>
++    </div>` : '';
++
+   const findingCards = findings.map(f => `
+     <div class="finding" style="border-left: 4px solid ${severityColor(f.severity)}; background: ${severityBg(f.severity)}; padding: 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0;">
+       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+@@ -87,7 +106,7 @@ async function generateHTMLReport(analysis, outPath) {
+     .logo { font-size: 42px; font-weight: 900; letter-spacing: -2px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+     .tagline { color: #94a3b8; margin-top: 8px; font-size: 16px; }
+     .container { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
+-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
++    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 32px; }
+     .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+     .card-value { font-size: 32px; font-weight: 800; }
+     .card-label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+@@ -132,6 +151,10 @@ async function generateHTMLReport(analysis, outPath) {
+         <div class="card-value" style="color:#eab308">${summary.medium}</div>
+         <div class="card-label">🟡 Medium</div>
+       </div>
++      <div class="card">
++        <div class="card-value" style="color:#06b6d4">${summary.low || 0}</div>
++        <div class="card-label">🔵 Low</div>
++      </div>
+       <div class="card">
+         <div class="card-value" style="color:#22c55e">${summary.info}</div>
+         <div class="card-label">✅ OK</div>
+@@ -162,7 +185,8 @@ async function generateHTMLReport(analysis, outPath) {
+           <tbody>${sessionRows}</tbody>
+         </table>
+       </div>
+-    </div>` : ''}
++    </div>
++    ${burnSummary}` : ''}
+ 
+   </div>
+   <div class="footer">
+@@ -172,7 +196,7 @@ async function generateHTMLReport(analysis, outPath) {
+ </html>`;
+ 
+   if (!outPath) {
+-    outPath = path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
++    outPath = path.join(process.cwd(), `clawculator-report-${Date.now()}.html`);
+   }
+   fs.writeFileSync(outPath, html, 'utf8');
+   return outPath;
+diff --git a/skills/clawculator/mdReport.js b/skills/clawculator/mdReport.js
+index 0f8971c..7a0a839 100644
+--- a/skills/clawculator/mdReport.js
++++ b/skills/clawculator/mdReport.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' };
++const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' };
+ const SOURCE_LABELS = {
+   heartbeat: '💓 Heartbeat', hooks: '🪝 Hooks', whatsapp: '📱 WhatsApp',
+   subagents: '🤖 Subagents', skills: '🔧 Skills', memory: '🧠 Memory',
+@@ -56,6 +56,7 @@ function generateMarkdownReport(analysis) {
+   lines.push(`| 🔴 Critical | ${summary.critical} |`);
+   lines.push(`| 🟠 High | ${summary.high} |`);
+   lines.push(`| 🟡 Medium | ${summary.medium} |`);
++  lines.push(`| 🔵 Low | ${summary.low || 0} |`);
+   lines.push(`| ✅ OK | ${summary.info} |`);
+   lines.push(`| Sessions analyzed | ${summary.sessionsAnalyzed} |`);
+   lines.push(`| Total tokens found | ${(summary.totalTokensFound || 0).toLocaleString()} |`);
+@@ -74,7 +75,7 @@ function generateMarkdownReport(analysis) {
+   lines.push('## Findings');
+   lines.push('');
+ 
+-  for (const severity of ['critical', 'high', 'medium', 'info']) {
++  for (const severity of ['critical', 'high', 'medium', 'low', 'info']) {
+     const group = findings.filter(f => f.severity === severity);
+     if (!group.length) continue;
+ 
+diff --git a/src/analyzer.js b/src/analyzer.js
+index 9c5b3b9..4659b5c 100644
+--- a/src/analyzer.js
++++ b/src/analyzer.js
+@@ -143,7 +143,12 @@ function isLocalModel(modelStr) {
+ 
+ function isHaikuTier(modelStr) {
+   if (!modelStr) return false;
+-  return modelStr.toLowerCase().includes('haiku');
++  const lower = modelStr.toLowerCase();
++  return lower.includes('haiku');
++}
++
++function isAcceptableForHooks(modelStr) {
++  return isLocalModel(modelStr) || isHaikuTier(modelStr);
+ }
+ 
+ function isOpenRouter(modelStr) {
+@@ -523,7 +528,11 @@ function analyzeSessions(sessionsPath) {
+     if (isOrphaned) orphaned.push({ key, model, tokens: inTok + outTok, cost });
+     if (inTok + outTok > 50000) large.push({ key, model, tokens: inTok + outTok });
+ 
+-    breakdown.push({ key, model, modelLabel: modelKey ? (MODEL_PRICING[modelKey]?.label || modelKey) : 'unknown', inputTokens: inTok, outputTokens: outTok, cost, updatedAt, isOrphaned });
++    const ageMs    = updatedAt ? Date.now() - new Date(updatedAt).getTime() : null;
++    const ageDays  = ageMs ? ageMs / (1000 * 3600 * 24) : null;
++    const dailyCost = (ageDays && ageDays > 0.01 && cost > 0) ? cost / ageDays : null;
++
++    breakdown.push({ key, model, modelLabel: modelKey ? (MODEL_PRICING[modelKey]?.label || modelKey) : 'unknown', inputTokens: inTok, outputTokens: outTok, cost, updatedAt, ageMs, dailyCost, isOrphaned });
+   }
+ 
+   if (orphaned.length > 0) findings.push({ severity: 'high', source: 'sessions', message: `${orphaned.length} orphaned session(s) — still holding tokens on paid models`, detail: orphaned.map(s => `${s.key}: ${s.tokens.toLocaleString()} tokens ($${s.cost.toFixed(4)})`).join('\n  '), ...FIXES.ORPHANED_SESSIONS });
+@@ -575,6 +584,7 @@ async function runAnalysis({ configPath, sessionsPath, logsDir }) {
+       critical:              allFindings.filter(f => f.severity === 'critical').length,
+       high:                  allFindings.filter(f => f.severity === 'high').length,
+       medium:                allFindings.filter(f => f.severity === 'medium').length,
++      low:                   allFindings.filter(f => f.severity === 'low').length,
+       info:                  allFindings.filter(f => f.severity === 'info').length,
+       estimatedMonthlyBleed,
+       sessionsAnalyzed:      sessionResult.sessionCount,
+diff --git a/src/htmlReport.js b/src/htmlReport.js
+index 30cae47..05f9616 100644
+--- a/src/htmlReport.js
++++ b/src/htmlReport.js
+@@ -5,15 +5,28 @@ const path = require('path');
+ const os = require('os');
+ 
+ function severityColor(severity) {
+-  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', info: '#22c55e' }[severity] || '#6b7280';
++  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#06b6d4', info: '#22c55e' }[severity] || '#6b7280';
+ }
+ 
+ function severityBg(severity) {
+-  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', info: '#f0fdf4' }[severity] || '#f9fafb';
++  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', low: '#ecfeff', info: '#f0fdf4' }[severity] || '#f9fafb';
+ }
+ 
+ function severityIcon(severity) {
+-  return { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' }[severity] || '⚪';
++  return { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' }[severity] || '⚪';
++}
++
++function relativeAge(ageMs) {
++  if (!ageMs) return 'unknown';
++  const s = Math.floor(ageMs / 1000);
++  if (s < 60)        return `${s}s ago`;
++  const m = Math.floor(s / 60);
++  if (m < 60)        return `${m}m ago`;
++  const h = Math.floor(m / 60);
++  if (h < 24)        return `${h}h ago`;
++  const d = Math.floor(h / 24);
++  if (d < 30)        return `${d}d ago`;
++  return `${Math.floor(d / 30)}mo ago`;
+ }
+ 
+ const SOURCE_LABELS = {
+@@ -27,6 +40,25 @@ async function generateHTMLReport(analysis, outPath) {
+   const { summary, findings, sessions } = analysis;
+   const bleed = summary.estimatedMonthlyBleed;
+ 
++  // Burn summary calculation
++  const activeSessions = (sessions || []).filter(s => s.dailyCost);
++  const totalDaily = activeSessions.reduce((sum, s) => sum + (s.dailyCost || 0), 0);
++  const totalMonthly = totalDaily * 30;
++  const burnSummary = totalDaily > 0 ? `
++    <div class="section">
++      <div class="section-title">Session Burn Rate</div>
++      <div style="display:flex; gap:32px; flex-wrap:wrap;">
++        <div>
++          <div style="font-size:24px; font-weight:800; color:#f59e0b;">$${totalDaily.toFixed(4)}/day</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Combined daily burn rate across ${activeSessions.length} active session${activeSessions.length !== 1 ? 's' : ''}</div>
++        </div>
++        <div>
++          <div style="font-size:24px; font-weight:800; color:#f97316;">$${totalMonthly.toFixed(2)}/month</div>
++          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Projected monthly from active sessions</div>
++        </div>
++      </div>
++    </div>` : '';
++
+   const findingCards = findings.map(f => `
+     <div class="finding" style="border-left: 4px solid ${severityColor(f.severity)}; background: ${severityBg(f.severity)}; padding: 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0;">
+       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+@@ -44,14 +76,22 @@ async function generateHTMLReport(analysis, outPath) {
+   const sessionRows = (sessions || [])
+     .sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
+     .slice(0, 20)
+-    .map(s => `
++    .map(s => {
++      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
++      const flag = s.isOrphaned ? ' ⚠️' : '';
++      const age = s.ageMs ? relativeAge(s.ageMs) : 'unknown';
++      const absDate = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '';
++      const daily = s.dailyCost ? `$${s.dailyCost.toFixed(4)}/day` : '—';
++      return `
+       <tr style="${s.isOrphaned ? 'background:#fff7ed' : ''}">
+-        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${s.key}${s.isOrphaned ? ' ⚠️' : ''}</td>
++        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${keyDisplay}${flag}</td>
+         <td style="padding:8px 12px">${s.modelLabel || s.model}</td>
+         <td style="padding:8px 12px; text-align:right">${(s.inputTokens + s.outputTokens).toLocaleString()}</td>
+         <td style="padding:8px 12px; text-align:right; color:${s.cost > 0.01 ? '#ef4444' : '#22c55e'}">$${s.cost.toFixed(6)}</td>
++        <td style="padding:8px 12px; text-align:right; color:#f59e0b">${daily}</td>
++        <td style="padding:8px 12px; color:#6b7280; font-size:13px" title="${absDate}">${age}</td>
+       </tr>
+-    `).join('');
++    `}).join('');
+ 
+   const html = `<!DOCTYPE html>
+ <html lang="en">
+@@ -66,7 +106,7 @@ async function generateHTMLReport(analysis, outPath) {
+     .logo { font-size: 42px; font-weight: 900; letter-spacing: -2px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+     .tagline { color: #94a3b8; margin-top: 8px; font-size: 16px; }
+     .container { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
+-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
++    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 32px; }
+     .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+     .card-value { font-size: 32px; font-weight: 800; }
+     .card-label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+@@ -111,6 +151,10 @@ async function generateHTMLReport(analysis, outPath) {
+         <div class="card-value" style="color:#eab308">${summary.medium}</div>
+         <div class="card-label">🟡 Medium</div>
+       </div>
++      <div class="card">
++        <div class="card-value" style="color:#06b6d4">${summary.low || 0}</div>
++        <div class="card-label">🔵 Low</div>
++      </div>
+       <div class="card">
+         <div class="card-value" style="color:#22c55e">${summary.info}</div>
+         <div class="card-label">✅ OK</div>
+@@ -137,11 +181,12 @@ async function generateHTMLReport(analysis, outPath) {
+       <div class="section-title">Session Breakdown</div>
+       <div style="overflow-x:auto">
+         <table>
+-          <thead><tr><th>Session</th><th>Model</th><th style="text-align:right">Tokens</th><th style="text-align:right">Cost</th></tr></thead>
++          <thead><tr><th>Session</th><th>Model</th><th style="text-align:right">Tokens</th><th style="text-align:right">Total Cost</th><th style="text-align:right">$/day</th><th>Last Active</th></tr></thead>
+           <tbody>${sessionRows}</tbody>
+         </table>
+       </div>
+-    </div>` : ''}
++    </div>
++    ${burnSummary}` : ''}
+ 
+   </div>
+   <div class="footer">
+@@ -151,7 +196,7 @@ async function generateHTMLReport(analysis, outPath) {
+ </html>`;
+ 
+   if (!outPath) {
+-    outPath = path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
++    outPath = path.join(process.cwd(), `clawculator-report-${Date.now()}.html`);
+   }
+   fs.writeFileSync(outPath, html, 'utf8');
+   return outPath;
+diff --git a/src/mdReport.js b/src/mdReport.js
+index 630818e..7a0a839 100644
+--- a/src/mdReport.js
++++ b/src/mdReport.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' };
++const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' };
+ const SOURCE_LABELS = {
+   heartbeat: '💓 Heartbeat', hooks: '🪝 Hooks', whatsapp: '📱 WhatsApp',
+   subagents: '🤖 Subagents', skills: '🔧 Skills', memory: '🧠 Memory',
+@@ -8,6 +8,25 @@ const SOURCE_LABELS = {
+   workspace: '📁 Workspace', config: '📄 Config',
+ };
+ 
++function relativeAge(ageMs) {
++  if (!ageMs) return 'unknown';
++  const s = Math.floor(ageMs / 1000);
++  if (s < 60)          return `${s}s ago`;
++  const m = Math.floor(s / 60);
++  if (m < 60)          return `${m}m ago`;
++  const h = Math.floor(m / 60);
++  if (h < 24)          return `${h}h ago`;
++  const d = Math.floor(h / 24);
++  if (d < 30)          return `${d}d ago`;
++  const mo = Math.floor(d / 30);
++  return `${mo}mo ago`;
++}
++
++function absoluteDate(updatedAt) {
++  if (!updatedAt) return '';
++  return new Date(updatedAt).toLocaleString();
++}
++
+ function generateMarkdownReport(analysis) {
+   const { summary, findings, sessions, primaryModel, scannedAt } = analysis;
+   const bleed = summary.estimatedMonthlyBleed;
+@@ -32,21 +51,31 @@ function generateMarkdownReport(analysis) {
+   // Summary table
+   lines.push('## Summary');
+   lines.push('');
+-  lines.push('| Severity | Count |');
+-  lines.push('|----------|-------|');
++  lines.push('| Metric | Value |');
++  lines.push('|--------|-------|');
+   lines.push(`| 🔴 Critical | ${summary.critical} |`);
+   lines.push(`| 🟠 High | ${summary.high} |`);
+   lines.push(`| 🟡 Medium | ${summary.medium} |`);
++  lines.push(`| 🔵 Low | ${summary.low || 0} |`);
+   lines.push(`| ✅ OK | ${summary.info} |`);
+   lines.push(`| Sessions analyzed | ${summary.sessionsAnalyzed} |`);
+   lines.push(`| Total tokens found | ${(summary.totalTokensFound || 0).toLocaleString()} |`);
++
++  // Session cost summary
++  if (sessions?.length > 0) {
++    const totalCost = sessions.reduce((sum, s) => sum + s.cost, 0);
++    const dailyRates = sessions.filter(s => s.dailyCost).map(s => s.dailyCost);
++    const totalDailyRate = dailyRates.reduce((sum, r) => sum + r, 0);
++    if (totalCost > 0)      lines.push(`| Total session cost (lifetime) | $${totalCost.toFixed(4)} |`);
++    if (totalDailyRate > 0) lines.push(`| Avg daily burn rate | $${totalDailyRate.toFixed(4)}/day (~$${(totalDailyRate * 30).toFixed(2)}/month) |`);
++  }
+   lines.push('');
+ 
+   // Findings by severity
+   lines.push('## Findings');
+   lines.push('');
+ 
+-  for (const severity of ['critical', 'high', 'medium', 'info']) {
++  for (const severity of ['critical', 'high', 'medium', 'low', 'info']) {
+     const group = findings.filter(f => f.severity === severity);
+     if (!group.length) continue;
+ 
+@@ -78,19 +107,24 @@ function generateMarkdownReport(analysis) {
+   if (sessions?.length > 0) {
+     lines.push('## Session Breakdown');
+     lines.push('');
+-    lines.push('| Session | Model | Tokens | Cost |');
+-    lines.push('|---------|-------|--------|------|');
++    lines.push('| Session | Model | Tokens | Total Cost | $/day | Last Active |');
++    lines.push('|---------|-------|--------|-----------|-------|-------------|');
+ 
+     [...sessions]
+       .sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
+       .slice(0, 20)
+       .forEach(s => {
+-        const tok  = (s.inputTokens + s.outputTokens).toLocaleString();
+-        const flag = s.isOrphaned ? ' ⚠️' : '';
+-        lines.push(`| \`${s.key}${flag}\` | ${s.modelLabel || s.model} | ${tok} | $${s.cost.toFixed(6)} |`);
++        const tok        = (s.inputTokens + s.outputTokens).toLocaleString();
++        const flag       = s.isOrphaned ? ' ⚠️' : '';
++        const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
++        const age        = s.ageMs ? `${relativeAge(s.ageMs)} (${absoluteDate(s.updatedAt)})` : 'unknown';
++        const daily      = s.dailyCost ? `$${s.dailyCost.toFixed(4)}` : '—';
++        lines.push(`| \`${keyDisplay}${flag}\` | ${s.modelLabel || s.model} | ${tok} | $${s.cost.toFixed(6)} | ${daily} | ${age} |`);
+       });
+ 
+     lines.push('');
++    lines.push('> ⚠️ = orphaned session · $/day = total cost ÷ session age');
++    lines.push('');
+   }
+ 
+   // Quick wins
+diff --git a/src/reporter.js b/src/reporter.js
+index d850c4a..8e35519 100644
+--- a/src/reporter.js
++++ b/src/reporter.js
+@@ -36,6 +36,19 @@ function formatCost(cost) {
+   return `\x1b[31m$${cost.toFixed(2)}/mo\x1b[0m`;
+ }
+ 
++function relativeAge(ageMs) {
++  if (!ageMs) return 'unknown';
++  const s = Math.floor(ageMs / 1000);
++  if (s < 60)        return `${s}s ago`;
++  const m = Math.floor(s / 60);
++  if (m < 60)        return `${m}m ago`;
++  const h = Math.floor(m / 60);
++  if (h < 24)        return `${h}h ago`;
++  const d = Math.floor(h / 24);
++  if (d < 30)        return `${d}d ago`;
++  return `${Math.floor(d / 30)}mo ago`;
++}
++
+ function generateTerminalReport(analysis) {
+   const { summary, findings, sessions } = analysis;
+   const R = '\x1b[0m';
+@@ -78,12 +91,22 @@ function generateTerminalReport(analysis) {
+   if (sessions?.length > 0) {
+     console.log(`${C}━━━ Top Sessions by Token Usage ━━━${R}\n`);
+     const sorted = [...sessions].sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens)).slice(0, 8);
+-    console.log(`  ${D}${'Session'.padEnd(42)} ${'Model'.padEnd(22)} ${'Tokens'.padEnd(10)} Cost${R}`);
+-    console.log(`  ${D}${'─'.repeat(85)}${R}`);
++    console.log(`  ${D}${'Session'.padEnd(16)} ${'Model'.padEnd(20)} ${'Tokens'.padEnd(10)} ${'Total Cost'.padEnd(12)} ${'$/day'.padEnd(10)} Last Active${R}`);
++    console.log(`  ${D}${'─'.repeat(95)}${R}`);
+     for (const s of sorted) {
+-      const tok = (s.inputTokens + s.outputTokens).toLocaleString();
+-      const flag = s.isOrphaned ? ' ⚠️' : '';
+-      console.log(`  ${(s.key + flag).slice(0, 42).padEnd(42)} ${(s.modelLabel || s.model || 'unknown').slice(0, 22).padEnd(22)} ${tok.padEnd(10)} $${s.cost.toFixed(6)}`);
++      const tok        = (s.inputTokens + s.outputTokens).toLocaleString();
++      const flag       = s.isOrphaned ? ' ⚠️' : '';
++      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
++      const age        = s.ageMs ? `${relativeAge(s.ageMs)} (${new Date(s.updatedAt).toLocaleDateString()})` : 'unknown';
++      const daily      = s.dailyCost ? `$${s.dailyCost.toFixed(4)}` : '—';
++      console.log(`  ${(keyDisplay + flag).padEnd(16)} ${(s.modelLabel || s.model || 'unknown').slice(0, 20).padEnd(20)} ${tok.padEnd(10)} $${s.cost.toFixed(6).padEnd(11)} ${daily.padEnd(10)} ${D}${age}${R}`);
++    }
++
++    // Daily burn rate summary
++    const totalDailyRate = sessions.filter(s => s.dailyCost).reduce((sum, s) => sum + s.dailyCost, 0);
++    if (totalDailyRate > 0) {
++      console.log();
++      console.log(`  ${D}Combined burn rate: ${R}${RED}$${totalDailyRate.toFixed(4)}/day${R}${D} · ~$${(totalDailyRate * 30).toFixed(2)}/month${R}`);
+     }
+     console.log();
+   }
+@@ -93,7 +116,7 @@ function generateTerminalReport(analysis) {
+   console.log(`  🔴 ${RED}${summary.critical}${R} critical  🟠 ${summary.high} high  🟡 ${summary.medium} medium  🔵 ${summary.low||0} low  ✅ ${summary.info} ok`);
+   console.log(`  Sessions analyzed: ${summary.sessionsAnalyzed} · Tokens found: ${(summary.totalTokensFound||0).toLocaleString()}`);
+   if (bleed > 0) {
+-    console.log(`  ${RED}${B}Monthly bleed: $${bleed.toFixed(2)}/month${R}`);
++    console.log(`  ${RED}${B}Estimated monthly bleed: $${bleed.toFixed(2)}/month${R}`);
+   } else {
+     console.log(`  ${GRN}No significant cost bleed detected ✓${R}`);
+   }

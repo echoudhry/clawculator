@@ -1,6 +1,6 @@
 'use strict';
 
-const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' };
+const SEVERITY_ICON = { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' };
 const SOURCE_LABELS = {
   heartbeat: '💓 Heartbeat', hooks: '🪝 Hooks', whatsapp: '📱 WhatsApp',
   subagents: '🤖 Subagents', skills: '🔧 Skills', memory: '🧠 Memory',
@@ -56,6 +56,7 @@ function generateMarkdownReport(analysis) {
   lines.push(`| 🔴 Critical | ${summary.critical} |`);
   lines.push(`| 🟠 High | ${summary.high} |`);
   lines.push(`| 🟡 Medium | ${summary.medium} |`);
+  lines.push(`| 🔵 Low | ${summary.low || 0} |`);
   lines.push(`| ✅ OK | ${summary.info} |`);
   lines.push(`| Sessions analyzed | ${summary.sessionsAnalyzed} |`);
   lines.push(`| Total tokens found | ${(summary.totalTokensFound || 0).toLocaleString()} |`);
@@ -74,7 +75,7 @@ function generateMarkdownReport(analysis) {
   lines.push('## Findings');
   lines.push('');
 
-  for (const severity of ['critical', 'high', 'medium', 'info']) {
+  for (const severity of ['critical', 'high', 'medium', 'low', 'info']) {
     const group = findings.filter(f => f.severity === severity);
     if (!group.length) continue;
 

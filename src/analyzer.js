@@ -143,7 +143,12 @@ function isLocalModel(modelStr) {
 
 function isHaikuTier(modelStr) {
   if (!modelStr) return false;
-  return modelStr.toLowerCase().includes('haiku');
+  const lower = modelStr.toLowerCase();
+  return lower.includes('haiku');
+}
+
+function isAcceptableForHooks(modelStr) {
+  return isLocalModel(modelStr) || isHaikuTier(modelStr);
 }
 
 function isOpenRouter(modelStr) {
@@ -523,7 +528,11 @@ function analyzeSessions(sessionsPath) {
     if (isOrphaned) orphaned.push({ key, model, tokens: inTok + outTok, cost });
     if (inTok + outTok > 50000) large.push({ key, model, tokens: inTok + outTok });
 
-    breakdown.push({ key, model, modelLabel: modelKey ? (MODEL_PRICING[modelKey]?.label || modelKey) : 'unknown', inputTokens: inTok, outputTokens: outTok, cost, updatedAt, isOrphaned });
+    const ageMs    = updatedAt ? Date.now() - new Date(updatedAt).getTime() : null;
+    const ageDays  = ageMs ? ageMs / (1000 * 3600 * 24) : null;
+    const dailyCost = (ageDays && ageDays > 0.01 && cost > 0) ? cost / ageDays : null;
+
+    breakdown.push({ key, model, modelLabel: modelKey ? (MODEL_PRICING[modelKey]?.label || modelKey) : 'unknown', inputTokens: inTok, outputTokens: outTok, cost, updatedAt, ageMs, dailyCost, isOrphaned });
   }
 
   if (orphaned.length > 0) findings.push({ severity: 'high', source: 'sessions', message: `${orphaned.length} orphaned session(s) — still holding tokens on paid models`, detail: orphaned.map(s => `${s.key}: ${s.tokens.toLocaleString()} tokens ($${s.cost.toFixed(4)})`).join('\n  '), ...FIXES.ORPHANED_SESSIONS });
@@ -575,6 +584,7 @@ async function runAnalysis({ configPath, sessionsPath, logsDir }) {
       critical:              allFindings.filter(f => f.severity === 'critical').length,
       high:                  allFindings.filter(f => f.severity === 'high').length,
       medium:                allFindings.filter(f => f.severity === 'medium').length,
+      low:                   allFindings.filter(f => f.severity === 'low').length,
       info:                  allFindings.filter(f => f.severity === 'info').length,
       estimatedMonthlyBleed,
       sessionsAnalyzed:      sessionResult.sessionCount,

@@ -5,15 +5,15 @@ const path = require('path');
 const os = require('os');
 
 function severityColor(severity) {
-  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', info: '#22c55e' }[severity] || '#6b7280';
+  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#06b6d4', info: '#22c55e' }[severity] || '#6b7280';
 }
 
 function severityBg(severity) {
-  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', info: '#f0fdf4' }[severity] || '#f9fafb';
+  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', low: '#ecfeff', info: '#f0fdf4' }[severity] || '#f9fafb';
 }
 
 function severityIcon(severity) {
-  return { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' }[severity] || '⚪';
+  return { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' }[severity] || '⚪';
 }
 
 function relativeAge(ageMs) {
@@ -39,6 +39,25 @@ const SOURCE_LABELS = {
 async function generateHTMLReport(analysis, outPath) {
   const { summary, findings, sessions } = analysis;
   const bleed = summary.estimatedMonthlyBleed;
+
+  // Burn summary calculation
+  const activeSessions = (sessions || []).filter(s => s.dailyCost);
+  const totalDaily = activeSessions.reduce((sum, s) => sum + (s.dailyCost || 0), 0);
+  const totalMonthly = totalDaily * 30;
+  const burnSummary = totalDaily > 0 ? `
+    <div class="section">
+      <div class="section-title">Session Burn Rate</div>
+      <div style="display:flex; gap:32px; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:24px; font-weight:800; color:#f59e0b;">$${totalDaily.toFixed(4)}/day</div>
+          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Combined daily burn rate across ${activeSessions.length} active session${activeSessions.length !== 1 ? 's' : ''}</div>
+        </div>
+        <div>
+          <div style="font-size:24px; font-weight:800; color:#f97316;">$${totalMonthly.toFixed(2)}/month</div>
+          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Projected monthly from active sessions</div>
+        </div>
+      </div>
+    </div>` : '';
 
   const findingCards = findings.map(f => `
     <div class="finding" style="border-left: 4px solid ${severityColor(f.severity)}; background: ${severityBg(f.severity)}; padding: 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0;">
@@ -87,7 +106,7 @@ async function generateHTMLReport(analysis, outPath) {
     .logo { font-size: 42px; font-weight: 900; letter-spacing: -2px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .tagline { color: #94a3b8; margin-top: 8px; font-size: 16px; }
     .container { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 32px; }
     .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
     .card-value { font-size: 32px; font-weight: 800; }
     .card-label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
@@ -133,6 +152,10 @@ async function generateHTMLReport(analysis, outPath) {
         <div class="card-label">🟡 Medium</div>
       </div>
       <div class="card">
+        <div class="card-value" style="color:#06b6d4">${summary.low || 0}</div>
+        <div class="card-label">🔵 Low</div>
+      </div>
+      <div class="card">
         <div class="card-value" style="color:#22c55e">${summary.info}</div>
         <div class="card-label">✅ OK</div>
       </div>
@@ -162,7 +185,8 @@ async function generateHTMLReport(analysis, outPath) {
           <tbody>${sessionRows}</tbody>
         </table>
       </div>
-    </div>` : ''}
+    </div>
+    ${burnSummary}` : ''}
 
   </div>
   <div class="footer">
@@ -172,7 +196,7 @@ async function generateHTMLReport(analysis, outPath) {
 </html>`;
 
   if (!outPath) {
-    outPath = path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
+    outPath = path.join(process.cwd(), `clawculator-report-${Date.now()}.html`);
   }
   fs.writeFileSync(outPath, html, 'utf8');
   return outPath;
