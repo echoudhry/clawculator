@@ -79,14 +79,16 @@ async function generateHTMLReport(analysis, outPath) {
     .map(s => {
       const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
       const flag = s.isOrphaned ? ' ⚠️' : '';
+      const txBadge = s.hasTranscript ? '<span style="color:#22c55e; font-size:10px; margin-left:4px" title="Cost from .jsonl transcript (API-reported)">●</span>' : '<span style="color:#6b7280; font-size:10px; margin-left:4px" title="Estimated cost (no transcript found)">○</span>';
       const age = s.ageMs ? relativeAge(s.ageMs) : 'unknown';
       const absDate = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '';
       const daily = s.dailyCost ? `$${s.dailyCost.toFixed(4)}/day` : '—';
+      const cacheTitle = (s.cacheRead || s.cacheWrite) ? `Cache R: ${(s.cacheRead||0).toLocaleString()} · W: ${(s.cacheWrite||0).toLocaleString()}` : '';
       return `
       <tr style="${s.isOrphaned ? 'background:#fff7ed' : ''}">
-        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${keyDisplay}${flag}</td>
+        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${keyDisplay}${flag}${txBadge}</td>
         <td style="padding:8px 12px">${s.modelLabel || s.model}</td>
-        <td style="padding:8px 12px; text-align:right">${(s.inputTokens + s.outputTokens).toLocaleString()}</td>
+        <td style="padding:8px 12px; text-align:right" title="${cacheTitle}">${(s.inputTokens + s.outputTokens).toLocaleString()}${(s.cacheRead || s.cacheWrite) ? `<span style="color:#6b7280; font-size:11px;"> +${((s.cacheRead||0)+(s.cacheWrite||0)).toLocaleString()} cache</span>` : ''}</td>
         <td style="padding:8px 12px; text-align:right; color:${s.cost > 0.01 ? '#ef4444' : '#22c55e'}">$${s.cost.toFixed(6)}</td>
         <td style="padding:8px 12px; text-align:right; color:#f59e0b">${daily}</td>
         <td style="padding:8px 12px; color:#6b7280; font-size:13px" title="${absDate}">${age}</td>
@@ -137,6 +139,27 @@ async function generateHTMLReport(analysis, outPath) {
     <div style="background:#14532d; border-radius:12px; padding:20px 24px; margin-bottom:24px; border:1px solid #22c55e">
       <div style="color:#86efac; font-size:18px; font-weight:700">✅ No significant cost bleed detected</div>
     </div>`}
+
+    ${summary.totalRealCost > 0 ? `
+    <div class="section" style="border:1px solid #f59e0b;">
+      <div class="section-title" style="color:#f59e0b;">💰 Actual API Spend (from transcripts)</div>
+      <div style="display:flex; gap:32px; flex-wrap:wrap; align-items:center;">
+        <div>
+          <div style="font-size:36px; font-weight:900; color:#fbbf24;">$${summary.totalRealCost.toFixed(4)}</div>
+          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Total real cost (API-reported)</div>
+        </div>
+        ${summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1 ? `
+        <div style="background:#451a03; padding:10px 16px; border-radius:8px; border:1px solid #92400e;">
+          <div style="font-size:14px; color:#fbbf24; font-weight:600;">${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x higher than sessions.json estimate</div>
+          <div style="font-size:12px; color:#d97706; margin-top:2px;">sessions.json: $${summary.totalEstimatedCost.toFixed(4)} — missing cache token costs</div>
+        </div>` : ''}
+      </div>
+      ${summary.totalCacheRead > 0 || summary.totalCacheWrite > 0 ? `
+      <div style="margin-top:16px; display:flex; gap:24px; flex-wrap:wrap;">
+        ${summary.totalCacheWrite > 0 ? `<div style="color:#f97316; font-size:14px;">📝 Cache writes: <strong>${summary.totalCacheWrite.toLocaleString()}</strong> tokens</div>` : ''}
+        ${summary.totalCacheRead > 0 ? `<div style="color:#22c55e; font-size:14px;">📖 Cache reads: <strong>${summary.totalCacheRead.toLocaleString()}</strong> tokens</div>` : ''}
+      </div>` : ''}
+    </div>` : ''}
 
     <div class="cards">
       <div class="card">

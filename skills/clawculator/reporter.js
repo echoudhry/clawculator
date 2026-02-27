@@ -115,6 +115,15 @@ function generateTerminalReport(analysis) {
   console.log(`${C}━━━ Summary ━━━${R}`);
   console.log(`  🔴 ${RED}${summary.critical}${R} critical  🟠 ${summary.high} high  🟡 ${summary.medium} medium  🔵 ${summary.low||0} low  ✅ ${summary.info} ok`);
   console.log(`  Sessions analyzed: ${summary.sessionsAnalyzed} · Tokens found: ${(summary.totalTokensFound||0).toLocaleString()}`);
+  if (summary.totalCacheRead > 0 || summary.totalCacheWrite > 0) {
+    console.log(`  ${D}Cache tokens: ${(summary.totalCacheRead||0).toLocaleString()} read · ${(summary.totalCacheWrite||0).toLocaleString()} write${R}`);
+  }
+  if (summary.totalRealCost > 0) {
+    console.log(`  ${B}Actual API spend: ${RED}$${summary.totalRealCost.toFixed(4)}${R}${B} (from .jsonl transcripts)${R}`);
+    if (summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1) {
+      console.log(`  ${D}sessions.json estimate: $${summary.totalEstimatedCost.toFixed(4)} — ${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x gap (cache tokens)${R}`);
+    }
+  }
   if (bleed > 0) {
     console.log(`  ${RED}${B}Estimated monthly bleed: $${bleed.toFixed(2)}/month${R}`);
   } else {

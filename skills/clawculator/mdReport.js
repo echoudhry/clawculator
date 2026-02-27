@@ -69,6 +69,14 @@ function generateMarkdownReport(analysis) {
     if (totalCost > 0)      lines.push(`| Total session cost (lifetime) | $${totalCost.toFixed(4)} |`);
     if (totalDailyRate > 0) lines.push(`| Avg daily burn rate | $${totalDailyRate.toFixed(4)}/day (~$${(totalDailyRate * 30).toFixed(2)}/month) |`);
   }
+  if (summary.totalRealCost > 0) {
+    lines.push(`| 💰 **Actual API spend** | **$${summary.totalRealCost.toFixed(4)}** |`);
+    if (summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1) {
+      lines.push(`| sessions.json estimate | $${summary.totalEstimatedCost.toFixed(4)} (${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x gap) |`);
+    }
+  }
+  if (summary.totalCacheWrite > 0) lines.push(`| Cache writes | ${summary.totalCacheWrite.toLocaleString()} tokens |`);
+  if (summary.totalCacheRead > 0)  lines.push(`| Cache reads | ${summary.totalCacheRead.toLocaleString()} tokens |`);
   lines.push('');
 
   // Findings by severity
