@@ -5,15 +5,15 @@ const path = require('path');
 const os = require('os');
 
 function severityColor(severity) {
-  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#38bdf8', info: '#22c55e' }[severity] || '#6b7280';
+  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', info: '#22c55e' }[severity] || '#6b7280';
 }
 
 function severityBg(severity) {
-  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', low: '#f0f9ff', info: '#f0fdf4' }[severity] || '#f9fafb';
+  return { critical: '#fef2f2', high: '#fff7ed', medium: '#fefce8', info: '#f0fdf4' }[severity] || '#f9fafb';
 }
 
 function severityIcon(severity) {
-  return { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵', info: '✅' }[severity] || '⚪';
+  return { critical: '🔴', high: '🟠', medium: '🟡', info: '✅' }[severity] || '⚪';
 }
 
 function relativeAge(ageMs) {
@@ -50,8 +50,7 @@ async function generateHTMLReport(analysis, outPath) {
       </div>
       <div style="font-weight:600; color:#111; margin-bottom:4px">${f.message}</div>
       ${f.detail ? `<div style="color:#555; font-size:14px; margin-bottom:6px; white-space:pre-line">${f.detail}</div>` : ''}
-      ${f.fix ? `<div style="color:#16a34a; font-size:14px; margin-top:8px">→ Fix: ${f.fix}</div>` : ''}
-      ${f.command ? `<div style="background:#0f172a; color:#7dd3fc; font-family:monospace; font-size:12px; padding:8px 12px; border-radius:6px; margin-top:8px">${f.command}</div>` : ''}
+      ${f.recommendation ? `<div style="color:#16a34a; font-size:14px; margin-top:8px">→ Fix: ${f.recommendation}</div>` : ''}
     </div>
   `).join('');
 
@@ -59,19 +58,19 @@ async function generateHTMLReport(analysis, outPath) {
     .sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
     .slice(0, 20)
     .map(s => {
-      const keyDisplay = s.key.length > 18 ? s.key.slice(0, 16) + '…' : s.key;
+      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
       const flag = s.isOrphaned ? ' ⚠️' : '';
       const age = s.ageMs ? relativeAge(s.ageMs) : 'unknown';
       const absDate = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '';
       const daily = s.dailyCost ? `$${s.dailyCost.toFixed(4)}/day` : '—';
       return `
-      <tr style="${s.isOrphaned ? 'background:#fff7ed; color:#111;' : ''}">
-        <td style="padding:8px 12px; font-family:monospace; font-size:13px; ${s.isOrphaned ? 'color:#111;' : ''}">${keyDisplay}${flag}</td>
-        <td style="padding:8px 12px; ${s.isOrphaned ? 'color:#111;' : ''}">${s.modelLabel || s.model}</td>
-        <td style="padding:8px 12px; text-align:right; ${s.isOrphaned ? 'color:#111;' : ''}">${(s.inputTokens + s.outputTokens).toLocaleString()}</td>
+      <tr style="${s.isOrphaned ? 'background:#fff7ed' : ''}">
+        <td style="padding:8px 12px; font-family:monospace; font-size:13px">${keyDisplay}${flag}</td>
+        <td style="padding:8px 12px">${s.modelLabel || s.model}</td>
+        <td style="padding:8px 12px; text-align:right">${(s.inputTokens + s.outputTokens).toLocaleString()}</td>
         <td style="padding:8px 12px; text-align:right; color:${s.cost > 0.01 ? '#ef4444' : '#22c55e'}">$${s.cost.toFixed(6)}</td>
         <td style="padding:8px 12px; text-align:right; color:#f59e0b">${daily}</td>
-        <td style="padding:8px 12px; color:#94a3b8; font-size:13px; ${s.isOrphaned ? 'color:#6b7280;' : ''}" title="${absDate}">${age}</td>
+        <td style="padding:8px 12px; color:#6b7280; font-size:13px" title="${absDate}">${age}</td>
       </tr>
     `}).join('');
 
@@ -88,16 +87,14 @@ async function generateHTMLReport(analysis, outPath) {
     .logo { font-size: 42px; font-weight: 900; letter-spacing: -2px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .tagline { color: #94a3b8; margin-top: 8px; font-size: 16px; }
     .container { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
-    .cards { display: table; width: 100%; border-spacing: 16px; border-collapse: separate; margin-bottom: 16px; }
-    .cards-row { display: table-row; }
-    .card { display: table-cell; background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; width: 16.6%; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
     .card-value { font-size: 32px; font-weight: 800; }
     .card-label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
     .section { background: #1e293b; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #334155; }
     .section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; color: #f1f5f9; }
     table { width: 100%; border-collapse: collapse; }
-    th { background: #0f172a; padding: 10px 12px; text-align: left; font-size: 13px; color: #cbd5e1; font-weight: 600; }
-    td { color: #e2e8f0; }
+    th { background: #0f172a; padding: 10px 12px; text-align: left; font-size: 13px; color: #94a3b8; }
     tr:nth-child(even) { background: #0f172a33; }
     .footer { text-align: center; color: #475569; font-size: 13px; padding: 32px; }
     .bleed { background: linear-gradient(135deg, #7f1d1d, #991b1b); border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; border: 1px solid #ef4444; }
@@ -122,7 +119,7 @@ async function generateHTMLReport(analysis, outPath) {
       <div style="color:#86efac; font-size:18px; font-weight:700">✅ No significant cost bleed detected</div>
     </div>`}
 
-    <div class="cards"><div class="cards-row">
+    <div class="cards">
       <div class="card">
         <div class="card-value" style="color:#ef4444">${summary.critical}</div>
         <div class="card-label">🔴 Critical</div>
@@ -136,10 +133,6 @@ async function generateHTMLReport(analysis, outPath) {
         <div class="card-label">🟡 Medium</div>
       </div>
       <div class="card">
-        <div class="card-value" style="color:#38bdf8">${summary.low || 0}</div>
-        <div class="card-label">🔵 Low</div>
-      </div>
-      <div class="card">
         <div class="card-value" style="color:#22c55e">${summary.info}</div>
         <div class="card-label">✅ OK</div>
       </div>
@@ -151,7 +144,7 @@ async function generateHTMLReport(analysis, outPath) {
         <div class="card-value" style="color:#818cf8">${(summary.totalTokensFound || 0).toLocaleString()}</div>
         <div class="card-label">Total Tokens Found</div>
       </div>
-    </div></div>
+    </div>
 
     <div class="section">
       <div class="section-title">Findings</div>
@@ -178,9 +171,11 @@ async function generateHTMLReport(analysis, outPath) {
 </body>
 </html>`;
 
-  const finalPath = outPath || path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
-  fs.writeFileSync(finalPath, html, 'utf8');
-  return finalPath;
+  if (!outPath) {
+    outPath = path.join(os.tmpdir(), `clawculator-report-${Date.now()}.html`);
+  }
+  fs.writeFileSync(outPath, html, 'utf8');
+  return outPath;
 }
 
 module.exports = { generateHTMLReport };
