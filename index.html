@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clawculator — Live Cost Dashboard Demo</title>
+<meta name="description" content="AI cost forensics for OpenClaw. Real-time browser dashboard. Your friendly penny pincher.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦞</text></svg>">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+
+  :root {
+    --bg-deep: #05080f;
+    --bg-card: #0b1120;
+    --bg-card-hover: #0f1729;
+    --border: #1a2744;
+    --border-glow: #1e3a5f;
+    --cyan: #22d3ee;
+    --cyan-dim: #0891b2;
+    --amber: #f59e0b;
+    --amber-dim: #92400e;
+    --red: #ef4444;
+    --red-dim: #991b1b;
+    --green: #22c55e;
+    --green-dim: #166534;
+    --purple: #a78bfa;
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --text-muted: #334155;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: var(--bg-deep);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background:
+      linear-gradient(rgba(34,211,238,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34,211,238,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    z-index: 0;
+    animation: gridScroll 20s linear infinite;
+  }
+  @keyframes gridScroll { to { background-position: 60px 60px; } }
+
+  body::after {
+    content: '';
+    position: fixed; top: -200px; right: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(34,211,238,0.08) 0%, transparent 70%);
+    z-index: 0;
+    animation: orbFloat 15s ease-in-out infinite alternate;
+  }
+  @keyframes orbFloat { 0% { transform: translate(0,0); } 100% { transform: translate(-100px,100px); } }
+
+  .app { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  /* Demo banner */
+  .demo-banner {
+    background: linear-gradient(135deg, rgba(34,211,238,0.1), rgba(167,139,250,0.1));
+    border: 1px solid var(--border-glow);
+    border-radius: 12px;
+    padding: 16px 24px;
+    margin-bottom: 20px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  .demo-banner-text { font-size: 14px; color: var(--text-dim); }
+  .demo-banner-text strong { color: var(--cyan); }
+  .demo-banner-cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--cyan); color: #000; font-weight: 700; font-size: 14px;
+    padding: 10px 20px; border-radius: 8px; text-decoration: none;
+    transition: all 0.2s;
+  }
+  .demo-banner-cta:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(34,211,238,0.3); }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 0; margin-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .logo-area { display: flex; align-items: center; gap: 16px; }
+  .logo-claw {
+    font-size: 48px;
+    filter: drop-shadow(0 0 12px rgba(34,211,238,0.3));
+  }
+  .logo-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800; font-size: 28px; letter-spacing: -1px;
+    background: linear-gradient(135deg, var(--cyan), #818cf8);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .logo-sub { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+  .header-right { text-align: right; }
+  .live-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); margin-right: 6px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+  .header-time { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-dim); }
+
+  /* Pac-Claw Chase */
+  .pacclaw-track {
+    position: absolute; top: 14px; left: 140px; right: 200px; height: 50px;
+    overflow: hidden; pointer-events: none;
+  }
+  .pacclaw-claw {
+    position: absolute; left: -40px; top: 8px; font-size: 32px; z-index: 2;
+    animation: clawRun 10s linear infinite;
+    filter: drop-shadow(0 0 8px rgba(34,211,238,0.4));
+  }
+  @keyframes clawRun { 0% { left: -40px; } 100% { left: calc(100% + 40px); } }
+  .pacclaw-penny {
+    position: absolute; top: 12px; font-size: 22px; z-index: 1;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .pacclaw-penny.eaten { opacity: 0 !important; transform: scale(0.3) !important; }
+  .pacclaw-track.turbo .pacclaw-claw {
+    animation-duration: 3s;
+    filter: drop-shadow(0 0 16px rgba(239,68,68,0.6));
+  }
+
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    transition: all 0.3s ease;
+    position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .card:hover::before { opacity: 1; }
+  .card:hover { border-color: var(--border-glow); }
+  .card-label { font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px; }
+  .card-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800; font-size: 36px; line-height: 1;
+  }
+  .card-sub { font-size: 13px; color: var(--text-dim); margin-top: 8px; }
+
+  .stats-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .stat-primary .card-value { font-size: 52px; }
+
+  .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  .section-title {
+    font-size: 14px; font-weight: 700; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 2px;
+    margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+  }
+
+  /* Sessions table */
+  .sessions-table { width: 100%; border-collapse: collapse; }
+  .sessions-table th {
+    font-size: 11px; font-weight: 600; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 1px;
+    padding: 12px 16px; text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .sessions-table td {
+    padding: 12px 16px; font-size: 14px;
+    border-bottom: 1px solid var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .sessions-table tr:hover { background: var(--bg-card-hover); }
+
+  /* Bar chart */
+  .bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 200px; padding-top: 20px; }
+  .bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .bar {
+    width: 100%; border-radius: 4px 4px 0 0;
+    transition: height 0.6s ease; min-height: 2px; position: relative;
+  }
+  .bar:hover { filter: brightness(1.3); }
+  .bar-label { font-size: 10px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; }
+  .bar-value {
+    font-size: 10px; color: var(--cyan); font-family: 'JetBrains Mono', monospace;
+    position: absolute; top: -16px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  }
+
+  /* Donut */
+  .donut-container { display: flex; align-items: center; gap: 24px; }
+  .donut-svg { width: 160px; height: 160px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* Leaderboard */
+  .leaderboard-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--text-muted);
+  }
+  .leaderboard-rank {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px; font-family: 'JetBrains Mono', monospace;
+  }
+  .rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #000; }
+  .rank-2 { background: linear-gradient(135deg, #94a3b8, #64748b); color: #000; }
+  .rank-3 { background: linear-gradient(135deg, #c2855a, #a0714a); color: #000; }
+  .rank-n { background: var(--text-muted); color: var(--text-dim); }
+
+  /* Heat map */
+  .heatmap { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .heat-cell {
+    aspect-ratio: 1; border-radius: 3px;
+    border: 1px solid var(--text-muted);
+    transition: all 0.2s; cursor: pointer; position: relative;
+  }
+  .heat-cell:hover { border-color: var(--cyan); transform: scale(1.2); z-index: 2; }
+
+  /* Feed */
+  .feed-item {
+    display: grid; grid-template-columns: 80px 120px 1fr 80px 80px;
+    gap: 8px; padding: 8px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; border-bottom: 1px solid var(--text-muted);
+    animation: feedSlide 0.3s ease-out;
+  }
+  @keyframes feedSlide { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+
+  /* Stagger animations */
+  .stagger { opacity: 0; animation: staggerIn 0.5s ease forwards; }
+  @keyframes staggerIn { to { opacity: 1; transform: translateY(0); } }
+  .stagger:nth-child(1) { animation-delay: 0.1s; }
+  .stagger:nth-child(2) { animation-delay: 0.2s; }
+  .stagger:nth-child(3) { animation-delay: 0.3s; }
+  .stagger:nth-child(4) { animation-delay: 0.4s; }
+
+  /* Counter animation */
+  .counter-animate { display: inline-block; transition: transform 0.2s ease; }
+  .counter-animate.bump { transform: scale(1.08); }
+
+  @media (max-width: 900px) {
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .charts-grid, .two-col { grid-template-columns: 1fr; }
+    .stat-primary .card-value { font-size: 36px; }
+    .pacclaw-track { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Demo Banner -->
+  <div class="demo-banner">
+    <div class="demo-banner-text">
+      🦞 <strong>This is a live demo</strong> with simulated data. Install and run <code style="background:var(--bg-card);padding:2px 8px;border-radius:4px;font-family:JetBrains Mono;font-size:13px;">npx clawculator --web</code> for real-time monitoring of your OpenClaw costs.
+    </div>
+    <a class="demo-banner-cta" href="https://www.npmjs.com/package/clawculator" target="_blank">
+      Install from npm →
+    </a>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo-area">
+      <div class="logo-claw">🦞</div>
+      <div>
+        <div class="logo-text">CLAWCULATOR</div>
+        <div class="logo-sub">Your friendly penny pincher</div>
+      </div>
+    </div>
+    <div class="pacclaw-track" id="pacclawTrack">
+      <div class="pacclaw-claw" id="pacclawClaw">🦞</div>
+    </div>
+    <div class="header-right">
+      <div><span class="live-dot"></span><span style="color:var(--green);font-weight:600;font-size:13px;">DEMO</span></div>
+      <div class="header-time" id="clock"></div>
+    </div>
+  </div>
+
+  <!-- Big Numbers -->
+  <div class="stats-grid">
+    <div class="card stat-primary stagger">
+      <div class="card-label">Today's Spend</div>
+      <div class="card-value counter-animate" id="todayCost" style="color:var(--amber)">$0.00</div>
+      <div class="card-sub"><span style="color:var(--red)">▲ +$3.41 vs yesterday (+18%)</span></div>
+    </div>
+    <div class="card stagger">
+      <div class="card-label">Messages</div>
+      <div class="card-value counter-animate" id="todayMessages" style="color:var(--text)">0</div>
+      <div class="card-sub" id="avgCost">Avg: $0.12/msg</div>
+    </div>
+    <div class="card stagger">
+      <div class="card-label">Peak $/msg</div>
+      <div class="card-value counter-animate" id="peakCost" style="color:var(--red)">$0.00</div>
+      <div class="card-sub">Most expensive single call</div>
+    </div>
+    <div class="card stagger">
+      <div class="card-label">Burn Rate</div>
+      <div class="card-value" style="color:var(--purple)">$1.42/hr</div>
+      <div class="card-sub">~$1,022/month projected</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="card">
+      <div class="section-title">📊 Hourly Cost Today</div>
+      <div class="bar-chart" id="hourlyChart"></div>
+    </div>
+    <div class="card">
+      <div class="section-title">🧠 Model Mix</div>
+      <div class="donut-container" id="modelDonut"></div>
+    </div>
+  </div>
+
+  <!-- Sessions + Leaderboard -->
+  <div class="two-col">
+    <div class="card">
+      <div class="section-title">⚡ Active Sessions</div>
+      <table class="sessions-table">
+        <thead><tr><th>Session</th><th>Model</th><th>Msgs</th><th>Cost</th></tr></thead>
+        <tbody id="sessionsBody"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="section-title">🏆 Costliest Calls Today</div>
+      <div id="leaderboard"></div>
+    </div>
+  </div>
+
+  <!-- History + Heat Map -->
+  <div class="two-col">
+    <div class="card">
+      <div class="section-title">📅 Daily History (14 days)</div>
+      <div class="bar-chart" id="historyChart" style="height:160px"></div>
+    </div>
+    <div class="card">
+      <div class="section-title">🔥 Spend Heat Map (30 days)</div>
+      <div class="heatmap" id="heatmap"></div>
+    </div>
+  </div>
+
+  <!-- Live Feed -->
+  <div class="card" style="margin-bottom:24px">
+    <div class="section-title">🌊 Live Feed</div>
+    <div id="liveFeed"></div>
+  </div>
+
+</div>
+
+<script>
+// ── Mock Data ─────────────────────────────────────────
+const MOCK = {
+  sessions: [
+    { name: 'agent:main', model: 'Sonnet 4.5', messages: 47, cost: 8.34 },
+    { name: 'cron:scheduler', model: 'Haiku 4.5', messages: 312, cost: 3.21 },
+    { name: 'whatsapp:group', model: 'Sonnet 4.5', messages: 23, cost: 2.87 },
+    { name: 'webchat', model: 'Opus 4', messages: 8, cost: 4.12 },
+    { name: 'skill:research', model: 'Sonnet 4.5', messages: 15, cost: 1.45 },
+    { name: 'agent:deploy', model: 'Haiku 4.5', messages: 89, cost: 0.78 },
+  ],
+  models: { 'Sonnet 4.5': 12.66, 'Haiku 4.5': 3.99, 'Opus 4': 4.12 },
+  hourly: [0.12,0.08,0.04,0.01,0,0,0.03,0.45,1.82,2.91,3.14,2.67,1.98,2.43,3.01,2.12,1.87,0.94,0.42,0.18,0.07,0.03,0.01,0],
+  history: [5.42,8.91,12.34,6.78,3.21,9.45,15.67,11.23,7.89,4.56,13.45,8.34,17.54,20.77],
+  topCalls: [
+    { cost: 1.23, session: 'webchat', model: 'Opus 4', time: '2:14 PM', tokens: '142K' },
+    { cost: 0.87, session: 'agent:main', model: 'Sonnet 4.5', time: '11:32 AM', tokens: '98K' },
+    { cost: 0.64, session: 'whatsapp:group', model: 'Sonnet 4.5', time: '9:45 AM', tokens: '71K' },
+    { cost: 0.52, session: 'agent:main', model: 'Sonnet 4.5', time: '3:18 PM', tokens: '58K' },
+    { cost: 0.41, session: 'skill:research', model: 'Sonnet 4.5', time: '10:22 AM', tokens: '45K' },
+  ],
+  feed: [
+    { time: '3:42:18 PM', session: 'agent:main', model: 'Sonnet 4.5', cost: 0.34, tokens: '38.2K' },
+    { time: '3:41:55 PM', session: 'webchat', model: 'Opus 4', cost: 1.23, tokens: '142K' },
+    { time: '3:40:12 PM', session: 'cron:scheduler', model: 'Haiku 4.5', cost: 0.008, tokens: '1.2K' },
+    { time: '3:39:44 PM', session: 'agent:main', model: 'Sonnet 4.5', cost: 0.18, tokens: '21K' },
+    { time: '3:38:02 PM', session: 'whatsapp:group', model: 'Sonnet 4.5', cost: 0.42, tokens: '47K' },
+    { time: '3:36:19 PM', session: 'cron:scheduler', model: 'Haiku 4.5', cost: 0.012, tokens: '1.8K' },
+    { time: '3:34:51 PM', session: 'agent:main', model: 'Sonnet 4.5', cost: 0.27, tokens: '31K' },
+    { time: '3:33:08 PM', session: 'skill:research', model: 'Sonnet 4.5', cost: 0.41, tokens: '45K' },
+  ],
+};
+
+// ── Helpers ───────────────────────────────────────────
+function fmtCost(n) {
+  if (n >= 1) return '$' + n.toFixed(2);
+  if (n >= 0.01) return '$' + n.toFixed(4);
+  return '$' + n.toFixed(6);
+}
+
+// ── Clock ─────────────────────────────────────────────
+setInterval(() => { document.getElementById('clock').textContent = new Date().toLocaleTimeString(); }, 1000);
+document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+
+// ── Pac-Claw ──────────────────────────────────────────
+const pacTrack = document.getElementById('pacclawTrack');
+let pacPennies = [];
+
+function spawnPennies() {
+  pacPennies.forEach(p => p.el.remove());
+  pacPennies = [];
+  const w = pacTrack.offsetWidth || 800;
+  for (let i = 0; i < 10; i++) {
+    const el = document.createElement('span');
+    el.className = 'pacclaw-penny';
+    el.textContent = '🪙';
+    const x = 30 + (i / 10) * (w - 60);
+    el.style.left = x + 'px'; el.style.opacity = '0.6';
+    pacTrack.appendChild(el);
+    pacPennies.push({ el, x, eaten: false });
+  }
+}
+spawnPennies();
+
+function pacLoop() {
+  const claw = document.getElementById('pacclawClaw');
+  if (!claw) return;
+  const cr = claw.getBoundingClientRect();
+  const tr = pacTrack.getBoundingClientRect();
+  const cx = cr.left - tr.left + cr.width / 2;
+  for (const p of pacPennies) {
+    if (!p.eaten && Math.abs(p.x - cx) < 22) { p.eaten = true; p.el.classList.add('eaten'); }
+  }
+  if (pacPennies.every(p => p.eaten)) setTimeout(spawnPennies, 500);
+  requestAnimationFrame(pacLoop);
+}
+requestAnimationFrame(pacLoop);
+
+// Turbo every 8 seconds for demo effect
+setInterval(() => {
+  pacTrack.classList.add('turbo');
+  const w = pacTrack.offsetWidth || 800;
+  for (let i = 0; i < 3; i++) {
+    const el = document.createElement('span');
+    el.className = 'pacclaw-penny'; el.textContent = '🪙';
+    el.style.left = (Math.random() * w) + 'px'; el.style.opacity = '0.8';
+    pacTrack.appendChild(el);
+    pacPennies.push({ el, x: parseFloat(el.style.left), eaten: false });
+  }
+  setTimeout(() => pacTrack.classList.remove('turbo'), 3000);
+}, 8000);
+
+// ── Animated counter ──────────────────────────────────
+function animateCounter(el, target, prefix, duration) {
+  const start = parseFloat(el.textContent.replace(/[^0-9.]/g, '')) || 0;
+  const startTime = performance.now();
+  function tick(now) {
+    const p = Math.min((now - startTime) / duration, 1);
+    const ease = 1 - Math.pow(1 - p, 3);
+    const val = start + (target - start) * ease;
+    el.textContent = prefix + val.toFixed(2);
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// ── Render ────────────────────────────────────────────
+// Big numbers
+setTimeout(() => animateCounter(document.getElementById('todayCost'), 20.77, '$', 2000), 300);
+setTimeout(() => {
+  const el = document.getElementById('todayMessages');
+  let v = 0; const t = 494;
+  const iv = setInterval(() => { v += Math.ceil((t - v) / 10); if (v >= t) { v = t; clearInterval(iv); } el.textContent = v; }, 50);
+}, 400);
+setTimeout(() => animateCounter(document.getElementById('peakCost'), 1.23, '$', 1500), 500);
+
+// Sessions
+document.getElementById('sessionsBody').innerHTML = MOCK.sessions.map(s => {
+  const c = s.cost > 5 ? 'var(--red)' : s.cost > 1 ? 'var(--amber)' : 'var(--green)';
+  return `<tr><td style="color:var(--cyan)">${s.name}</td><td style="color:var(--text-dim)">${s.model}</td><td>${s.messages}</td><td style="color:${c}">${fmtCost(s.cost)}</td></tr>`;
+}).join('');
+
+// Hourly chart
+const maxH = Math.max(...MOCK.hourly);
+const now = new Date().getHours();
+document.getElementById('hourlyChart').innerHTML = MOCK.hourly.map((v, i) => {
+  const h = Math.max(2, (v / maxH) * 180);
+  const cur = i === 15; // simulate "current hour" at 3pm
+  const color = cur ? 'var(--amber)' : 'var(--cyan)';
+  return `<div class="bar-group"><div class="bar" style="height:${h}px;background:linear-gradient(180deg,${color},${color}44);animation:barGrow 0.6s ease ${i*0.03}s both">${v>0?`<div class="bar-value">${fmtCost(v)}</div>`:''}</div><div class="bar-label"${cur?' style="color:var(--amber);font-weight:700"':''}>${String(i).padStart(2,'0')}</div></div>`;
+}).join('');
+
+// Model donut
+const models = Object.entries(MOCK.models);
+const total = models.reduce((s,[,v]) => s+v, 0);
+const colors = ['#22d3ee','#a78bfa','#f59e0b'];
+let cum = 0;
+const paths = models.map(([name,cost],i) => {
+  const pct = cost/total; const sa = cum; cum += pct*360; const ea = cum;
+  const r=60,cx=80,cy=80;
+  const x1=cx+r*Math.cos((sa-90)*Math.PI/180), y1=cy+r*Math.sin((sa-90)*Math.PI/180);
+  const x2=cx+r*Math.cos((ea-90)*Math.PI/180), y2=cy+r*Math.sin((ea-90)*Math.PI/180);
+  const lg=pct>0.5?1:0; const ri=35;
+  const x3=cx+ri*Math.cos((ea-90)*Math.PI/180), y3=cy+ri*Math.sin((ea-90)*Math.PI/180);
+  const x4=cx+ri*Math.cos((sa-90)*Math.PI/180), y4=cy+ri*Math.sin((sa-90)*Math.PI/180);
+  return {d:`M${x1},${y1} A${r},${r} 0 ${lg} 1 ${x2},${y2} L${x3},${y3} A${ri},${ri} 0 ${lg} 0 ${x4},${y4} Z`,c:colors[i],name,cost,pct};
+});
+document.getElementById('modelDonut').innerHTML =
+  `<svg class="donut-svg" viewBox="0 0 160 160">${paths.map(p=>`<path d="${p.d}" fill="${p.c}" opacity="0.85"><title>${p.name}: ${fmtCost(p.cost)} (${(p.pct*100).toFixed(1)}%)</title></path>`).join('')}<text x="80" y="78" text-anchor="middle" fill="white" font-family="JetBrains Mono" font-weight="800" font-size="16">${fmtCost(total)}</text><text x="80" y="94" text-anchor="middle" fill="#64748b" font-family="JetBrains Mono" font-size="10">total</text></svg>` +
+  `<div>${paths.map(p=>`<div class="legend-item"><div class="legend-dot" style="background:${p.c}"></div><span style="color:var(--text-dim)">${p.name}</span><span style="margin-left:auto;font-family:JetBrains Mono;font-size:12px;color:${p.c}">${fmtCost(p.cost)}</span></div>`).join('')}</div>`;
+
+// Leaderboard
+document.getElementById('leaderboard').innerHTML = MOCK.topCalls.map((m,i) => {
+  const rc = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-n';
+  return `<div class="leaderboard-item"><div class="leaderboard-rank ${rc}">${i+1}</div><div style="flex:1"><div style="font-weight:600;font-size:14px;color:var(--amber)">${fmtCost(m.cost)}</div><div style="font-size:11px;color:var(--text-dim)">${m.session} · ${m.model} · ${m.time}</div></div><div style="font-size:11px;color:var(--text-dim);text-align:right">${m.tokens} tok</div></div>`;
+}).join('');
+
+// History bars
+const maxHist = Math.max(...MOCK.history);
+document.getElementById('historyChart').innerHTML = MOCK.history.map((v,i) => {
+  const h = Math.max(2, (v/maxHist)*140);
+  const isToday = i === MOCK.history.length - 1;
+  const color = isToday ? 'var(--amber)' : 'var(--cyan)';
+  const d = new Date(); d.setDate(d.getDate() - (MOCK.history.length - 1 - i));
+  const label = (d.getMonth()+1)+'/'+d.getDate();
+  return `<div class="bar-group"><div class="bar" style="height:${h}px;background:linear-gradient(180deg,${color},${color}44)"><div class="bar-value">${fmtCost(v)}</div></div><div class="bar-label"${isToday?' style="color:var(--amber);font-weight:700"':''}>${label}</div></div>`;
+}).join('');
+
+// Heatmap
+const heatEl = document.getElementById('heatmap');
+let heatHTML = '';
+for (let i = 34; i >= 0; i--) {
+  const cost = Math.random() * 20;
+  const intensity = cost / 20;
+  const color = intensity > 0.7 ? `rgba(239,68,68,${intensity})` : intensity > 0.3 ? `rgba(245,158,11,${intensity})` : `rgba(34,211,238,${Math.max(0.15,intensity)})`;
+  const d = new Date(); d.setDate(d.getDate() - i);
+  heatHTML += `<div class="heat-cell" style="background:${color}" title="${d.toISOString().slice(0,10)}: ${fmtCost(cost)}"></div>`;
+}
+heatEl.innerHTML = heatHTML;
+
+// Live Feed
+document.getElementById('liveFeed').innerHTML = MOCK.feed.map(ev => {
+  const cc = ev.cost > 0.5 ? 'var(--red)' : ev.cost > 0.05 ? 'var(--amber)' : 'var(--green)';
+  return `<div class="feed-item"><span style="color:var(--text-dim)">${ev.time}</span><span style="color:var(--cyan)">${ev.session}</span><span style="color:var(--text-dim)">${ev.model}</span><span style="color:${cc};text-align:right">${fmtCost(ev.cost)}</span><span style="color:var(--text-dim);text-align:right">${ev.tokens}</span></div>`;
+}).join('');
+
+// ── Simulate live events ──────────────────────────────
+const sessions = ['agent:main','cron:scheduler','whatsapp:group','webchat','skill:research'];
+const simModels = ['Sonnet 4.5','Haiku 4.5','Opus 4'];
+
+setInterval(() => {
+  const sess = sessions[Math.floor(Math.random()*sessions.length)];
+  const model = simModels[Math.floor(Math.random()*simModels.length)];
+  const cost = model === 'Opus 4' ? (Math.random()*1.5+0.1) : model === 'Sonnet 4.5' ? (Math.random()*0.5+0.01) : (Math.random()*0.02+0.001);
+  const tokens = model === 'Opus 4' ? Math.floor(Math.random()*150+20)+'K' : Math.floor(Math.random()*50+1)+'K';
+  const time = new Date().toLocaleTimeString();
+  const cc = cost > 0.5 ? 'var(--red)' : cost > 0.05 ? 'var(--amber)' : 'var(--green)';
+
+  const feed = document.getElementById('liveFeed');
+  const newItem = document.createElement('div');
+  newItem.className = 'feed-item';
+  newItem.innerHTML = `<span style="color:var(--text-dim)">${time}</span><span style="color:var(--cyan)">${sess}</span><span style="color:var(--text-dim)">${model}</span><span style="color:${cc};text-align:right">${fmtCost(cost)}</span><span style="color:var(--text-dim);text-align:right">${tokens}</span>`;
+  feed.insertBefore(newItem, feed.firstChild);
+  if (feed.children.length > 10) feed.removeChild(feed.lastChild);
+}, 5000);
+
+// Add barGrow animation
+const style = document.createElement('style');
+style.textContent = '@keyframes barGrow { from { height: 0 !important; } }';
+document.head.appendChild(style);
+</script>
+</body>
+</html>

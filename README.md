@@ -2,11 +2,11 @@
   <img src="logo.png" width="200" />
 </p>
 
-# Clawculator
+# Clawculator 🦞
 
 > **Your friendly penny pincher.**
 
-AI cost forensics for OpenClaw and multi-model setups. One command. Full analysis. 100% offline. Zero AI. Pure deterministic logic.
+AI cost forensics for OpenClaw and multi-model setups. Real-time browser dashboard. Terminal monitoring. Full offline analysis. Zero AI. Pure deterministic logic.
 
 [![npm version](https://badge.fury.io/js/clawculator.svg)](https://badge.fury.io/js/clawculator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -22,22 +22,94 @@ It could be any of these. Clawculator finds all of them — with zero AI, zero g
 
 ---
 
-![Clawculator Report](report-preview.png)
+## Quick start
 
-## [▶ Live Demo](https://echoudhry.github.io/clawculator)
+```bash
+npx clawculator --web     # Browser dashboard at localhost:3457
+```
 
-See it run against a real config — findings, fix commands, cost exposure, session breakdown.
-
+That's it. Pin the tab. Watch your costs in real-time while you work.
 
 ---
 
-## One command
+## [▶ Live Demo](https://echoudhry.github.io/clawculator)
+
+See the full dashboard with simulated data — Pac-Claw, hourly charts, heat map, live feed, and more.
+
+![Clawculator Web Dashboard](web-dashboard.png)
+
+---
+
+## 🦞 The Pac-Claw
+
+The dashboard features a Pac-Man-style lobster claw that chomps across the header eating pennies. When an API call comes in, the claw goes into **TURBO mode** — speeds up 3x, glows red, and extra pennies spawn. Because your friendly penny pincher should look the part.
+
+---
+
+## Modes
+
+### `--web` — Browser Dashboard (new in v2.6)
+
+```bash
+npx clawculator --web
+```
+
+A live-updating browser dashboard at `localhost:3457` powered by SSE (Server-Sent Events) — no polling, instant updates when API calls land.
+
+**What you see:**
+- 🔥 **Today's Spend** — big number, real-time, color-coded (green → amber → red)
+- 📊 **Hourly Cost Chart** — bar chart with current hour highlighted
+- 🧠 **Model Mix Donut** — spend breakdown by model (Sonnet vs Opus vs Haiku)
+- ⚡ **Active Sessions** — table sorted by cost with model + message count
+- 🏆 **Costliest Calls** — leaderboard with gold/silver/bronze ranks
+- 📅 **Daily History** — 14-day bar chart with yesterday comparison
+- 🔥 **Spend Heat Map** — 30-day grid (like GitHub contributions, but for spend)
+- 🌊 **Live Feed** — every API call as it happens with slide-in animations
+- 💰 **Burn Rate** — projected monthly cost based on today's velocity
+
+**Persistence:** Data is stored in SQLite at `~/.openclaw/clawculator.db`. History builds over time — the longer you run it, the richer your charts get.
+
+```bash
+npx clawculator --web --port=8080    # Custom port
+```
+
+### `--live` — Terminal Dashboard
+
+```bash
+npx clawculator --live
+```
+
+A real-time terminal dashboard that watches `.jsonl` transcripts. Perfect for a tmux pane alongside your main session:
+
+```bash
+tmux split-window -h "npx clawculator --live"
+```
+
+Press `q` to quit, `r` to force refresh.
+
+### `--report` — HTML Report
+
+```bash
+npx clawculator --report
+```
+
+Generates a full HTML report and opens it in your browser. Includes findings with terminal-style fix commands, session tables, cost summary, and quick wins.
+
+### `--md` — Markdown Report
+
+```bash
+npx clawculator --md
+```
+
+Structured report your OpenClaw agent can read directly. Drop it in your workspace and ask your agent "what's my cost status?"
+
+### Default — Terminal Analysis
 
 ```bash
 npx clawculator
 ```
 
-No install. No account. No config. Auto-detects your OpenClaw setup. Full deterministic report in seconds.
+Color-coded findings by severity with cost estimates and exact fix commands. Today's spend, all-time spend, session breakdown, and actionable quick wins.
 
 ---
 
@@ -45,7 +117,7 @@ No install. No account. No config. Auto-detects your OpenClaw setup. Full determ
 
 Clawculator uses **pure switch/case deterministic logic** — no LLM, no Ollama, no model of any kind. Every finding and recommendation is hardcoded. Results are 100% reproducible and non-negotiable.
 
-Your `openclaw.json`, session logs, and API keys never leave your machine. There is no server. Disconnect your internet and run it — it works.
+Your `openclaw.json`, session logs, and API keys never leave your machine. The `--web` dashboard runs on `localhost` only. There is no external server. Disconnect your internet and run it — it works.
 
 ---
 
@@ -62,36 +134,32 @@ Your `openclaw.json`, session logs, and API keys never leave your machine. There
 | 🤖 Subagents | maxConcurrent too high — burst multiplier | 🟠 High |
 | 📁 Workspace | Too many root .md files inflating context | 🟡 Medium |
 | 🧠 Memory | memoryFlush on primary model | 🟡 Medium |
+| 💸 Transcript gaps | sessions.json vs actual .jsonl cost discrepancy | 🔴 Critical |
 | ⚙️ Primary model | Cost awareness of chosen model tier | ℹ️ Info |
 
 ---
 
-## Usage
+## Transcript parsing
 
-```bash
-npx clawculator                          # Terminal analysis (default)
-npx clawculator --md                     # Markdown report (readable by your AI agent)
-npx clawculator --report                 # Visual HTML dashboard
-npx clawculator --json                   # JSON for piping into other tools
-npx clawculator --md --out=~/cost.md     # Custom output path
-npx clawculator --config=/path/to/openclaw.json
-npx clawculator --help
-```
+Clawculator reads `.jsonl` transcript files directly from `~/.openclaw/agents/*/sessions/` to calculate **actual API spend** — not what `sessions.json` reports (which can be 1000x+ under-reported).
+
+The `--web` and `--live` modes watch these files in real-time, tailing new lines as they're appended. Every API call shows up in your dashboard the moment it happens.
 
 ---
 
-## Output formats
+## All flags
 
-**Terminal** — color-coded findings by severity with cost estimates and exact fix commands.
-
-**Markdown (`--md`)** — structured report your OpenClaw agent can read directly. Drop it in your workspace and ask your agent "what's my cost status?" It reads `clawculator-report.md` and answers.
-
-**HTML (`--report`)** — visual dashboard with session breakdown table, cost exposure banner, opens in browser locally.
-
-**JSON (`--json`)** — machine-readable, pipeable:
 ```bash
-npx clawculator --json | jq '.summary'
-npx clawculator --json > cost-report.json
+npx clawculator                          # Terminal analysis (default)
+npx clawculator --web                    # Browser dashboard (localhost:3457)
+npx clawculator --web --port=8080        # Custom port
+npx clawculator --live                   # Real-time terminal dashboard
+npx clawculator --report                 # Visual HTML report
+npx clawculator --md                     # Markdown report
+npx clawculator --json                   # JSON for piping
+npx clawculator --md --out=~/cost.md     # Custom output path
+npx clawculator --config=/path/to/openclaw.json
+npx clawculator --help
 ```
 
 ---
@@ -120,18 +188,15 @@ curl -o ~/clawd/skills/clawculator/SKILL.md \
   https://raw.githubusercontent.com/echoudhry/clawculator/main/skills/clawculator/SKILL.md
 ```
 
-Start a new session to pick it up.
-
 ---
 
-## Why deterministic?
+## Tech stack
 
-Every recommendation is a hardcoded switch/case — not generated by an AI. This means:
-
-- Results are identical every time for the same input
-- No hallucinations, no surprises
-- Works completely offline with no model dependency
-- Fast — analysis runs in under a second
+- **Node.js** — zero dependencies for core analysis
+- **better-sqlite3** — optional, powers `--web` persistence and historical charts
+- **SSE** — Server-Sent Events for real-time browser updates (no WebSocket overhead)
+- **fs.watch** — native file watching for `.jsonl` transcript tailing
+- Pure CSS animations — no React, no build step, no bundler
 
 ---
 
