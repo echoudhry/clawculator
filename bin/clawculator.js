@@ -64,6 +64,8 @@ async function main() {
   console.log(BANNER);
   if (flags.live) {
     console.log(BANNER);
+    console.log(`  ${D}💡 Tip: Run this in a tmux pane alongside your main session${R}`);
+    console.log(`  ${D}   tmux split-window -h "npx clawculator --live"${R}\n`);
     const { startLiveDashboard } = require('../src/liveDashboard');
     startLiveDashboard({ openclawHome });
     return; // dashboard runs until user quits
