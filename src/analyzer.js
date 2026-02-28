@@ -528,13 +528,16 @@ function parseTranscript(jsonlPath) {
 
       // Only assistant messages with usage blocks have cost data
       if (entry.type !== 'message') continue;
-      if (!entry.usage) continue;
+
+      // Usage can be at entry.usage (some formats) or entry.message.usage (standard format)
+      const u = entry.usage || entry.message?.usage;
+      if (!u) continue;
 
       messageCount++;
-      const u = entry.usage;
 
-      // Use model from transcript (most accurate)
-      if (entry.model && !model) model = entry.model;
+      // Model can be at entry.model or entry.message.model
+      const entryModel = entry.model || entry.message?.model;
+      if (entryModel && !model) model = entryModel;
 
       input       += u.input       || 0;
       output      += u.output      || 0;
