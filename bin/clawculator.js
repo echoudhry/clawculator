@@ -13,6 +13,7 @@ const flags = {
   report: args.includes('--report'),
   json:   args.includes('--json'),
   md:     args.includes('--md'),
+  live:   args.includes('--live'),
   help:   args.includes('--help') || args.includes('-h'),
   config: args.find(a => a.startsWith('--config='))?.split('=')[1],
   out:    args.find(a => a.startsWith('--out='))?.split('=')[1],
@@ -36,6 +37,7 @@ Usage: clawculator [options]
 
 Options:
   (no flags)        Full terminal analysis
+  --live            Real-time cost dashboard (watches transcripts)
   --md              Save markdown report to ./clawculator-report.md
   --report          Generate HTML report and open in browser
   --json            Output raw JSON
@@ -45,6 +47,7 @@ Options:
 
 Examples:
   npx clawculator                         # Terminal analysis
+  npx clawculator --live                  # Real-time cost dashboard
   npx clawculator --md                    # Markdown report (readable by your AI agent)
   npx clawculator --report                # Visual HTML dashboard
   npx clawculator --json                  # JSON for piping
@@ -59,10 +62,30 @@ async function main() {
   }
 
   console.log(BANNER);
+  if (flags.live) {
+    console.log(BANNER);
+    const { startLiveDashboard } = require('../src/liveDashboard');
+    startLiveDashboard({ openclawHome });
+    return; // dashboard runs until user quits
+  }
+
   console.log('\x1b[90mScanning your setup...\x1b[0m\n');
 
-  const configPath   = flags.config || path.join(os.homedir(), '.openclaw', 'openclaw.json');
-  const sessionsPath = path.join(os.homedir(), '.openclaw', 'agents', 'main', 'sessions', 'sessions.json');
+  const openclawHome = process.env.OPENCLAW_HOME || path.join(os.homedir(), '.openclaw');
+  const configPath   = flags.config || path.join(openclawHome, 'openclaw.json');
+
+  // Auto-discover sessions path: find first agent with a sessions.json
+  let sessionsPath = path.join(openclawHome, 'agents', 'main', 'sessions', 'sessions.json');
+  if (!fs.existsSync(sessionsPath)) {
+    const agentsDir = path.join(openclawHome, 'agents');
+    try {
+      for (const agent of fs.readdirSync(agentsDir)) {
+        const candidate = path.join(agentsDir, agent, 'sessions', 'sessions.json');
+        if (fs.existsSync(candidate)) { sessionsPath = candidate; break; }
+      }
+    } catch { /* agents dir missing */ }
+  }
+
   const logsDir      = '/tmp/openclaw';
 
   let analysis;
