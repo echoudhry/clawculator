@@ -66,25 +66,26 @@ async function main() {
   }
 
   console.log(BANNER);
+
+  const openclawHome = process.env.OPENCLAW_HOME || path.join(os.homedir(), '.openclaw');
+
   if (flags.web) {
-    console.log(BANNER);
     const { startWebDashboard } = require('../src/webDashboard');
     startWebDashboard({ openclawHome, port: flags.port });
-    return; // server runs until Ctrl+C
+    return;
   }
 
   if (flags.live) {
-    console.log(BANNER);
+    const D = '\x1b[90m', R = '\x1b[0m';
     console.log(`  ${D}💡 Tip: Run this in a tmux pane alongside your main session${R}`);
     console.log(`  ${D}   tmux split-window -h "npx clawculator --live"${R}\n`);
     const { startLiveDashboard } = require('../src/liveDashboard');
     startLiveDashboard({ openclawHome });
-    return; // dashboard runs until user quits
+    return;
   }
 
   console.log('\x1b[90mScanning your setup...\x1b[0m\n');
 
-  const openclawHome = process.env.OPENCLAW_HOME || path.join(os.homedir(), '.openclaw');
   const configPath   = flags.config || path.join(openclawHome, 'openclaw.json');
 
   // Auto-discover sessions path: find first agent with a sessions.json
