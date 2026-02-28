@@ -14,9 +14,11 @@ const flags = {
   json:   args.includes('--json'),
   md:     args.includes('--md'),
   live:   args.includes('--live'),
+  web:    args.includes('--web'),
   help:   args.includes('--help') || args.includes('-h'),
   config: args.find(a => a.startsWith('--config='))?.split('=')[1],
   out:    args.find(a => a.startsWith('--out='))?.split('=')[1],
+  port:   parseInt(args.find(a => a.startsWith('--port='))?.split('=')[1] || '3457'),
 };
 
 const BANNER = `
@@ -37,9 +39,10 @@ Usage: clawculator [options]
 
 Options:
   (no flags)        Full terminal analysis
-  --live            Real-time cost dashboard (watches transcripts)
-  --md              Save markdown report to ./clawculator-report.md
+  --live            Real-time cost dashboard in terminal (great for tmux)
+  --web             Browser dashboard at localhost:3457 (pin the tab!)
   --report          Generate HTML report and open in browser
+  --md              Save markdown report to ./clawculator-report.md
   --json            Output raw JSON
   --out=PATH        Custom output path for --md or --report
   --config=PATH     Path to openclaw.json (auto-detected by default)
@@ -47,7 +50,8 @@ Options:
 
 Examples:
   npx clawculator                         # Terminal analysis
-  npx clawculator --live                  # Real-time cost dashboard
+  npx clawculator --web                   # Browser dashboard (localhost:3457)
+  npx clawculator --live                  # Real-time terminal dashboard
   npx clawculator --md                    # Markdown report (readable by your AI agent)
   npx clawculator --report                # Visual HTML dashboard
   npx clawculator --json                  # JSON for piping
@@ -62,6 +66,13 @@ async function main() {
   }
 
   console.log(BANNER);
+  if (flags.web) {
+    console.log(BANNER);
+    const { startWebDashboard } = require('../src/webDashboard');
+    startWebDashboard({ openclawHome, port: flags.port });
+    return; // server runs until Ctrl+C
+  }
+
   if (flags.live) {
     console.log(BANNER);
     console.log(`  ${D}💡 Tip: Run this in a tmux pane alongside your main session${R}`);
