@@ -40,9 +40,9 @@ async function generateHTMLReport(analysis, outPath) {
   const { summary, findings, sessions } = analysis;
   const bleed = summary.estimatedMonthlyBleed;
 
-  // Burn summary calculation
-  const activeSessions = (sessions || []).filter(s => s.dailyCost);
-  const totalDaily = activeSessions.reduce((sum, s) => sum + (s.dailyCost || 0), 0);
+  // Burn summary calculation — only tracked sessions (not historical untracked)
+  const trackedSessions = (sessions || []).filter(s => !s.isUntracked && s.dailyCost);
+  const totalDaily = trackedSessions.reduce((sum, s) => sum + (s.dailyCost || 0), 0);
   const totalMonthly = totalDaily * 30;
   const burnSummary = totalDaily > 0 ? `
     <div class="section">
@@ -50,7 +50,7 @@ async function generateHTMLReport(analysis, outPath) {
       <div style="display:flex; gap:32px; flex-wrap:wrap;">
         <div>
           <div style="font-size:24px; font-weight:800; color:#f59e0b;">$${totalDaily.toFixed(4)}/day</div>
-          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Combined daily burn rate across ${activeSessions.length} active session${activeSessions.length !== 1 ? 's' : ''}</div>
+          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Combined daily burn rate across ${trackedSessions.length} active session${trackedSessions.length !== 1 ? 's' : ''}</div>
         </div>
         <div>
           <div style="font-size:24px; font-weight:800; color:#f97316;">$${totalMonthly.toFixed(2)}/month</div>
@@ -73,10 +73,7 @@ async function generateHTMLReport(analysis, outPath) {
     </div>
   `).join('');
 
-  const sessionRows = (sessions || [])
-    .sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens))
-    .slice(0, 20)
-    .map(s => {
+  const makeSessionRow = (s) => {
       const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
       const flag = s.isOrphaned ? ' ⚠️' : '';
       const txBadge = s.hasTranscript ? '<span style="color:#22c55e; font-size:10px; margin-left:4px" title="Cost from .jsonl transcript (API-reported)">●</span>' : '<span style="color:#6b7280; font-size:10px; margin-left:4px" title="Estimated cost (no transcript found)">○</span>';
@@ -84,16 +81,33 @@ async function generateHTMLReport(analysis, outPath) {
       const absDate = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '';
       const daily = s.dailyCost ? `$${s.dailyCost.toFixed(4)}/day` : '—';
       const cacheTitle = (s.cacheRead || s.cacheWrite) ? `Cache R: ${(s.cacheRead||0).toLocaleString()} · W: ${(s.cacheWrite||0).toLocaleString()}` : '';
+      const rowBg = s.isOrphaned ? 'background:#fff7ed' : (s.isRecent ? 'background:#fffbeb' : '');
       return `
-      <tr style="${s.isOrphaned ? 'background:#fff7ed' : ''}">
+      <tr style="${rowBg}">
         <td style="padding:8px 12px; font-family:monospace; font-size:13px">${keyDisplay}${flag}${txBadge}</td>
         <td style="padding:8px 12px">${s.modelLabel || s.model}</td>
         <td style="padding:8px 12px; text-align:right" title="${cacheTitle}">${(s.inputTokens + s.outputTokens).toLocaleString()}${(s.cacheRead || s.cacheWrite) ? `<span style="color:#6b7280; font-size:11px;"> +${((s.cacheRead||0)+(s.cacheWrite||0)).toLocaleString()} cache</span>` : ''}</td>
-        <td style="padding:8px 12px; text-align:right; color:${s.cost > 0.01 ? '#ef4444' : '#22c55e'}">$${s.cost.toFixed(6)}</td>
+        <td style="padding:8px 12px; text-align:right; color:${s.cost > 0.01 ? '#ef4444' : '#22c55e'}">$${s.cost.toFixed(4)}</td>
         <td style="padding:8px 12px; text-align:right; color:#f59e0b">${daily}</td>
         <td style="padding:8px 12px; color:#6b7280; font-size:13px" title="${absDate}">${age}</td>
-      </tr>
-    `}).join('');
+      </tr>`;
+  };
+
+  const activeSessions = (sessions || []).filter(s => !s.isUntracked);
+  const untrackedSessions = (sessions || []).filter(s => s.isUntracked);
+
+  const activeRows = activeSessions
+    .sort((a, b) => b.cost - a.cost)
+    .slice(0, 20)
+    .map(makeSessionRow).join('');
+
+  const untrackedRows = untrackedSessions
+    .sort((a, b) => b.cost - a.cost)
+    .slice(0, 10)
+    .map(makeSessionRow).join('');
+
+  const untrackedTotal = untrackedSessions.reduce((sum, s) => sum + s.cost, 0);
+  const untrackedHidden = Math.max(0, untrackedSessions.length - 10);
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -144,9 +158,14 @@ async function generateHTMLReport(analysis, outPath) {
     <div class="section" style="border:1px solid #f59e0b;">
       <div class="section-title" style="color:#f59e0b;">💰 Actual API Spend (from transcripts)</div>
       <div style="display:flex; gap:32px; flex-wrap:wrap; align-items:center;">
+        ${summary.todayCost > 0 ? `
         <div>
-          <div style="font-size:36px; font-weight:900; color:#fbbf24;">$${summary.totalRealCost.toFixed(4)}</div>
-          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Total real cost (API-reported)</div>
+          <div style="font-size:36px; font-weight:900; color:#ef4444;">$${summary.todayCost.toFixed(2)}</div>
+          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">Today's spend</div>
+        </div>` : ''}
+        <div>
+          <div style="font-size:36px; font-weight:900; color:#fbbf24;">$${summary.totalRealCost.toFixed(2)}</div>
+          <div style="font-size:13px; color:#94a3b8; margin-top:4px;">All-time total (API-reported)</div>
         </div>
         ${summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1 ? `
         <div style="background:#451a03; padding:10px 16px; border-radius:8px; border:1px solid #92400e;">
@@ -199,17 +218,32 @@ async function generateHTMLReport(analysis, outPath) {
       </div>
     </div>
 
-    ${sessionRows ? `
+    ${activeRows ? `
     <div class="section">
-      <div class="section-title">Session Breakdown</div>
+      <div class="section-title">Active Sessions</div>
       <div style="overflow-x:auto">
         <table>
           <thead><tr><th>Session</th><th>Model</th><th style="text-align:right">Tokens</th><th style="text-align:right">Total Cost</th><th style="text-align:right">$/day</th><th>Last Active</th></tr></thead>
-          <tbody>${sessionRows}</tbody>
+          <tbody>${activeRows}</tbody>
         </table>
       </div>
-    </div>
-    ${burnSummary}` : ''}
+      <div style="margin-top:8px; font-size:12px; color:#64748b;">● = cost from transcript · ○ = estimated · ⚠️ = orphaned</div>
+    </div>` : ''}
+
+    ${untrackedRows ? `
+    <div class="section" style="border:1px solid #475569;">
+      <div class="section-title" style="color:#94a3b8;">📦 Historical Sessions — $${untrackedTotal.toFixed(2)} total</div>
+      <div style="font-size:13px; color:#64748b; margin-bottom:12px;">Old/deleted sessions still on disk. Top 10 by cost.</div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Session</th><th>Model</th><th style="text-align:right">Tokens</th><th style="text-align:right">Total Cost</th><th style="text-align:right">$/day</th><th>Last Active</th></tr></thead>
+          <tbody>${untrackedRows}</tbody>
+        </table>
+      </div>
+      ${untrackedHidden > 0 ? `<div style="margin-top:8px; font-size:12px; color:#64748b;">+ ${untrackedHidden} more not shown</div>` : ''}
+    </div>` : ''}
+
+    ${burnSummary} : ''}
 
   </div>
   <div class="footer">

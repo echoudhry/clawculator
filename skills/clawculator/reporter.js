@@ -87,29 +87,50 @@ function generateTerminalReport(analysis) {
     }
   }
 
-  // Session breakdown
-  if (sessions?.length > 0) {
-    console.log(`${C}━━━ Top Sessions by Token Usage ━━━${R}\n`);
-    const sorted = [...sessions].sort((a, b) => (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens)).slice(0, 8);
+  // Session breakdown — split active from historical
+  const activeSess = (sessions || []).filter(s => !s.isUntracked);
+  const untrackedSess = (sessions || []).filter(s => s.isUntracked);
+
+  if (activeSess.length > 0) {
+    console.log(`${C}━━━ Active Sessions ━━━${R}\n`);
+    const sorted = [...activeSess].sort((a, b) => b.cost - a.cost).slice(0, 8);
     console.log(`  ${D}${'Session'.padEnd(16)} ${'Model'.padEnd(20)} ${'Tokens'.padEnd(10)} ${'Total Cost'.padEnd(12)} ${'$/day'.padEnd(10)} Last Active${R}`);
-    console.log(`  ${D}${'─'.repeat(95)}${R}`);
+    console.log(`  ${D}${'\u2500'.repeat(95)}${R}`);
     for (const s of sorted) {
       const tok        = (s.inputTokens + s.outputTokens).toLocaleString();
-      const flag       = s.isOrphaned ? ' ⚠️' : '';
-      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '…' : s.key;
+      const flag       = s.isOrphaned ? ' \u26a0\ufe0f' : '';
+      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '\u2026' : s.key;
       const age        = s.ageMs ? `${relativeAge(s.ageMs)} (${new Date(s.updatedAt).toLocaleDateString()})` : 'unknown';
-      const daily      = s.dailyCost ? `$${s.dailyCost.toFixed(4)}` : '—';
-      console.log(`  ${(keyDisplay + flag).padEnd(16)} ${(s.modelLabel || s.model || 'unknown').slice(0, 20).padEnd(20)} ${tok.padEnd(10)} $${s.cost.toFixed(6).padEnd(11)} ${daily.padEnd(10)} ${D}${age}${R}`);
+      const daily      = s.dailyCost ? `$${s.dailyCost.toFixed(4)}` : '\u2014';
+      console.log(`  ${(keyDisplay + flag).padEnd(16)} ${(s.modelLabel || s.model || 'unknown').slice(0, 20).padEnd(20)} ${tok.padEnd(10)} $${s.cost.toFixed(4).padEnd(11)} ${daily.padEnd(10)} ${D}${age}${R}`);
     }
 
-    // Daily burn rate summary
-    const totalDailyRate = sessions.filter(s => s.dailyCost).reduce((sum, s) => sum + s.dailyCost, 0);
+    // Daily burn rate — tracked sessions only
+    const totalDailyRate = activeSess.filter(s => s.dailyCost).reduce((sum, s) => sum + s.dailyCost, 0);
     if (totalDailyRate > 0) {
       console.log();
-      console.log(`  ${D}Combined burn rate: ${R}${RED}$${totalDailyRate.toFixed(4)}/day${R}${D} · ~$${(totalDailyRate * 30).toFixed(2)}/month${R}`);
+      console.log(`  ${D}Combined burn rate: ${R}${RED}$${totalDailyRate.toFixed(4)}/day${R}${D} \u00b7 ~$${(totalDailyRate * 30).toFixed(2)}/month${R}`);
     }
     console.log();
   }
+
+  if (untrackedSess.length > 0) {
+    const untrackedTotal = untrackedSess.reduce((sum, s) => sum + s.cost, 0);
+    console.log(`${C}━━━ Historical Sessions (${untrackedSess.length} untracked) \u2014 $${untrackedTotal.toFixed(2)} total ━━━${R}\n`);
+    const sorted = [...untrackedSess].sort((a, b) => b.cost - a.cost).slice(0, 5);
+    console.log(`  ${D}${'Session'.padEnd(16)} ${'Model'.padEnd(20)} ${'Tokens'.padEnd(10)} ${'Total Cost'.padEnd(12)} Last Active${R}`);
+    console.log(`  ${D}${'\u2500'.repeat(80)}${R}`);
+    for (const s of sorted) {
+      const tok        = (s.inputTokens + s.outputTokens).toLocaleString();
+      const keyDisplay = s.key.length > 12 ? s.key.slice(0, 8) + '\u2026' : s.key;
+      const age        = s.ageMs ? `${relativeAge(s.ageMs)} (${new Date(s.updatedAt).toLocaleDateString()})` : 'unknown';
+      console.log(`  ${keyDisplay.padEnd(16)} ${(s.modelLabel || s.model || 'unknown').slice(0, 20).padEnd(20)} ${tok.padEnd(10)} $${s.cost.toFixed(4).padEnd(11)} ${D}${age}${R}`);
+    }
+    const hidden = Math.max(0, untrackedSess.length - 5);
+    if (hidden > 0) console.log(`  ${D}+ ${hidden} more not shown${R}`);
+    console.log();
+  }
+
 
   // Summary
   console.log(`${C}━━━ Summary ━━━${R}`);
@@ -119,7 +140,11 @@ function generateTerminalReport(analysis) {
     console.log(`  ${D}Cache tokens: ${(summary.totalCacheRead||0).toLocaleString()} read · ${(summary.totalCacheWrite||0).toLocaleString()} write${R}`);
   }
   if (summary.totalRealCost > 0) {
-    console.log(`  ${B}Actual API spend: ${RED}$${summary.totalRealCost.toFixed(4)}${R}${B} (from .jsonl transcripts)${R}`);
+    if (summary.todayCost > 0) {
+      console.log(`  ${B}Today's spend: ${RED}$${summary.todayCost.toFixed(2)}${R}${B} · All-time: ${RED}$${summary.totalRealCost.toFixed(2)}${R}${B} (from .jsonl transcripts)${R}`);
+    } else {
+      console.log(`  ${B}Actual API spend: ${RED}$${summary.totalRealCost.toFixed(2)}${R}${B} (from .jsonl transcripts)${R}`);
+    }
     if (summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1) {
       console.log(`  ${D}sessions.json estimate: $${summary.totalEstimatedCost.toFixed(4)} — ${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x gap (cache tokens)${R}`);
     }

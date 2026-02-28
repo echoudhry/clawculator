@@ -709,13 +709,19 @@ function analyzeSessions(sessionsPath) {
   // Scan for untracked .jsonl files (sessions not in sessions.json)
   const trackedIds = new Set(Object.values(sessions).map(s => s.sessionId).filter(Boolean));
   let untrackedCount = 0, untrackedCost = 0, untrackedTokens = 0;
+  let untrackedRecentCount = 0, untrackedRecentCost = 0;
+  const NOW = Date.now();
+  const TODAY_START = new Date(); TODAY_START.setHours(0, 0, 0, 0);
+  const todayMs = TODAY_START.getTime();
+
   if (sessionsDir) {
     try {
       for (const file of fs.readdirSync(sessionsDir)) {
         if (!file.endsWith('.jsonl')) continue;
         const fileId = file.replace('.jsonl', '');
         if (trackedIds.has(fileId)) continue; // already counted
-        const transcript = parseTranscript(path.join(sessionsDir, file));
+        const filePath = path.join(sessionsDir, file);
+        const transcript = parseTranscript(filePath);
         if (transcript && transcript.messageCount > 0) {
           untrackedCount++;
           untrackedCost += transcript.totalCost;
@@ -723,6 +729,14 @@ function analyzeSessions(sessionsPath) {
           totalRealCost += transcript.totalCost;
           totalCacheRead += transcript.cacheRead;
           totalCacheWrite += transcript.cacheWrite;
+
+          // Check if this file was modified today (recent vs historical)
+          let fileMtime = null;
+          try { fileMtime = fs.statSync(filePath).mtimeMs; } catch {}
+          const isRecent = fileMtime && (NOW - fileMtime < 48 * 3600 * 1000);
+          const isToday = fileMtime && fileMtime >= todayMs;
+          if (isRecent) { untrackedRecentCount++; untrackedRecentCost += transcript.totalCost; }
+
           breakdown.push({
             key: `untracked:${fileId.slice(0, 8)}`, sessionId: fileId, model: transcript.model,
             modelLabel: transcript.model ? (MODEL_PRICING[resolveModel(transcript.model)]?.label || transcript.model) : 'unknown',
@@ -732,8 +746,9 @@ function analyzeSessions(sessionsPath) {
             hasTranscript: true, isSharedSession: false,
             messageCount: transcript.messageCount,
             updatedAt: transcript.lastTs ? new Date(transcript.lastTs).toISOString() : null,
-            ageMs: transcript.lastTs ? Date.now() - transcript.lastTs : null,
+            ageMs: transcript.lastTs ? NOW - transcript.lastTs : null,
             dailyCost: null, isOrphaned: false, isUntracked: true,
+            isRecent, isToday,
           });
         }
       }
@@ -741,11 +756,14 @@ function analyzeSessions(sessionsPath) {
   }
 
   if (untrackedCount > 0) {
+    const detail = [`${untrackedTokens.toLocaleString()} tokens · $${untrackedCost.toFixed(4)} total API costs`];
+    if (untrackedRecentCount > 0) detail.push(`${untrackedRecentCount} active in last 48h ($${untrackedRecentCost.toFixed(4)})`);
+    detail.push('These are sessions not listed in sessions.json — old/deleted or spawned by subprocesses');
     findings.push({
-      severity: untrackedCost > 1 ? 'high' : 'medium',
+      severity: untrackedRecentCost > 1 ? 'high' : (untrackedCost > 1 ? 'medium' : 'info'),
       source: 'sessions',
-      message: `${untrackedCount} untracked session(s) found — .jsonl files not in sessions.json`,
-      detail: `${untrackedTokens.toLocaleString()} tokens · $${untrackedCost.toFixed(4)} in API costs\nThese are old/deleted sessions still on disk with real spend data`,
+      message: `${untrackedCount} untracked session(s) found (${untrackedRecentCount} recent)`,
+      detail: detail.join('\n'),
     });
   }
 
@@ -794,10 +812,22 @@ function analyzeSessions(sessionsPath) {
     }
   }
 
+  // Compute today's cost across all sessions (tracked + untracked)
+  let todayCost = 0;
+  for (const s of breakdown) {
+    if (s.isToday) { todayCost += s.cost; continue; }
+    // For tracked sessions, check if updatedAt is today
+    if (!s.isUntracked && s.updatedAt) {
+      const upd = new Date(s.updatedAt).getTime();
+      if (upd >= todayMs) todayCost += s.cost;
+    }
+  }
+
   return {
     exists: true, findings, sessions: breakdown,
     totalInputTokens: totalIn, totalOutputTokens: totalOut,
     totalCost, totalCacheRead, totalCacheWrite, totalRealCost,
+    todayCost,
     sessionCount: Object.keys(sessions).length,
   };
 }
@@ -905,6 +935,7 @@ async function runAnalysis({ configPath, sessionsPath, logsDir }) {
       totalCacheWrite:       sessionResult.totalCacheWrite || 0,
       totalRealCost:         realCost,
       totalEstimatedCost:    sessionResult.totalCost || 0,
+      todayCost:             sessionResult.todayCost || 0,
     },
     sessions: sessionResult.sessions || [],
     webChatSessions,
