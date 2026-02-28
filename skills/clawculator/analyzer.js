@@ -690,7 +690,7 @@ function analyzeSessions(sessionsPath) {
 
     const ageMs    = updatedAt ? Date.now() - new Date(updatedAt).getTime() : null;
     const ageDays  = ageMs ? ageMs / (1000 * 3600 * 24) : null;
-    const dailyCost = (ageDays && ageDays > 0.01 && realCost > 0) ? realCost / ageDays : null;
+    const dailyCost = (ageDays && ageDays > 1.0 && realCost > 0) ? realCost / ageDays : null;
 
     const realModelKey = resolveModel(realModel);
     breakdown.push({
