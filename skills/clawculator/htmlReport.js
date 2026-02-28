@@ -69,7 +69,8 @@ async function generateHTMLReport(analysis, outPath) {
       </div>
       <div style="font-weight:600; color:#111; margin-bottom:4px">${f.message}</div>
       ${f.detail ? `<div style="color:#555; font-size:14px; margin-bottom:6px; white-space:pre-line">${f.detail}</div>` : ''}
-      ${f.recommendation ? `<div style="color:#16a34a; font-size:14px; margin-top:8px">→ Fix: ${f.recommendation}</div>` : ''}
+      ${f.fix ? `<div style="color:#16a34a; font-size:14px; margin-top:8px;">→ ${f.fix}</div>` : ''}
+      ${f.command ? `<div style="background:#0f172a; color:#38bdf8; font-family:monospace; font-size:13px; padding:10px 14px; border-radius:6px; margin-top:6px; white-space:pre-wrap; border:1px solid #1e293b;"><span style="color:#6b7280; user-select:none;">$ </span>${f.command}</div>` : ''}
     </div>
   `).join('');
 
@@ -243,7 +244,60 @@ async function generateHTMLReport(analysis, outPath) {
       ${untrackedHidden > 0 ? `<div style="margin-top:8px; font-size:12px; color:#64748b;">+ ${untrackedHidden} more not shown</div>` : ''}
     </div>` : ''}
 
-    ${burnSummary} : ''}
+    ${burnSummary}
+
+    <div class="section">
+      <div class="section-title">Summary</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+        <div>
+          <div style="font-size:13px; color:#94a3b8;">Severity Breakdown</div>
+          <div style="margin-top:4px;">🔴 ${summary.critical} critical · 🟠 ${summary.high} high · 🟡 ${summary.medium} medium · 🔵 ${summary.low||0} low · ✅ ${summary.info} ok</div>
+        </div>
+        <div>
+          <div style="font-size:13px; color:#94a3b8;">Sessions Analyzed</div>
+          <div style="margin-top:4px; font-size:18px; font-weight:700;">${summary.sessionsAnalyzed}</div>
+        </div>
+        <div>
+          <div style="font-size:13px; color:#94a3b8;">Total Tokens</div>
+          <div style="margin-top:4px; font-size:18px; font-weight:700;">${(summary.totalTokensFound||0).toLocaleString()}</div>
+        </div>
+        ${summary.todayCost > 0 ? `<div>
+          <div style="font-size:13px; color:#94a3b8;">Today's Spend</div>
+          <div style="margin-top:4px; font-size:18px; font-weight:700; color:#ef4444;">$${summary.todayCost.toFixed(2)}</div>
+        </div>` : ''}
+        <div>
+          <div style="font-size:13px; color:#94a3b8;">All-Time Spend</div>
+          <div style="margin-top:4px; font-size:18px; font-weight:700; color:#fbbf24;">$${summary.totalRealCost.toFixed(2)}</div>
+        </div>
+        ${summary.totalCacheRead > 0 ? `<div>
+          <div style="font-size:13px; color:#94a3b8;">Cache Tokens</div>
+          <div style="margin-top:4px; font-size:14px;">${(summary.totalCacheRead||0).toLocaleString()} read<br/>${(summary.totalCacheWrite||0).toLocaleString()} write</div>
+        </div>` : ''}
+        ${summary.totalEstimatedCost > 0 && summary.totalRealCost > summary.totalEstimatedCost * 1.1 ? `<div>
+          <div style="font-size:13px; color:#94a3b8;">sessions.json Gap</div>
+          <div style="margin-top:4px; font-size:14px; color:#f59e0b;">Estimate: $${summary.totalEstimatedCost.toFixed(4)}<br/>${(summary.totalRealCost / summary.totalEstimatedCost).toFixed(1)}x under-reported</div>
+        </div>` : ''}
+        ${bleed > 0 ? `<div>
+          <div style="font-size:13px; color:#94a3b8;">Monthly Bleed</div>
+          <div style="margin-top:4px; font-size:18px; font-weight:700; color:#ef4444;">$${bleed.toFixed(2)}/mo</div>
+        </div>` : ''}
+      </div>
+    </div>
+
+    ${(() => {
+      const wins = findings.filter(f => f.fix && f.severity !== 'info');
+      if (!wins.length) return '';
+      return `
+    <div class="section" style="border:1px solid #22c55e;">
+      <div class="section-title" style="color:#22c55e;">⚡ Quick Wins</div>
+      ${wins.slice(0, 5).map((f, i) => `
+        <div style="margin-bottom:16px;">
+          <div style="color:#22c55e; font-weight:600; margin-bottom:4px;">${i+1}. ${f.fix}</div>
+          ${f.command ? `<div style="background:#0f172a; color:#38bdf8; font-family:monospace; font-size:13px; padding:10px 14px; border-radius:6px; white-space:pre-wrap; border:1px solid #1e293b;"><span style="color:#6b7280; user-select:none;">$ </span>${f.command}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>`;
+    })()}
 
   </div>
   <div class="footer">
