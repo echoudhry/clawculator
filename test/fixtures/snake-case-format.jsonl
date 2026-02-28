@@ -1,0 +1,2 @@
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4-5-20250929","timestamp":"2026-02-28T11:00:00Z","usage":{"input_tokens":2500,"output_tokens":1000,"cache_read_input_tokens":45000,"cache_creation_input_tokens":3000,"cost":{"total":0.0312}}}}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4-5-20250929","timestamp":"2026-02-28T11:05:00Z","usage":{"input_tokens":1800,"output_tokens":900,"cache_read_input_tokens":46000,"cache_creation_input_tokens":0,"cost":{"total":0.0245}}}}

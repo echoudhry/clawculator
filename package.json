@@ -1,6 +1,6 @@
 {
   "name": "clawculator",
-  "version": "2.6.1",
+  "version": "2.1.2",
   "description": "AI cost forensics for OpenClaw and multi-model setups. Your friendly penny pincher. 100% offline. Zero AI. Pure deterministic logic.",
   "main": "src/analyzer.js",
   "bin": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node bin/clawculator.js",
-    "test": "node -e \"const {runAnalysis} = require('./src/analyzer'); runAnalysis({configPath:'~/.openclaw/openclaw.json',sessionsPath:'',logsDir:''}).then(r => console.log('OK:', r.summary))\""
+    "test": "node test/run.js"
   },
   "keywords": [
     "openclaw",
@@ -30,7 +30,8 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "dependencies": {},
   "optionalDependencies": {
-    "better-sqlite3": "^11.10.0"
+    "better-sqlite3": "^11.0.0"
   }
 }

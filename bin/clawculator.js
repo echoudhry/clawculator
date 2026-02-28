@@ -15,6 +15,7 @@ const flags = {
   md:     args.includes('--md'),
   live:   args.includes('--live'),
   web:    args.includes('--web'),
+  prune:  args.includes('--prune'),
   help:   args.includes('--help') || args.includes('-h'),
   config: args.find(a => a.startsWith('--config='))?.split('=')[1],
   out:    args.find(a => a.startsWith('--out='))?.split('=')[1],
@@ -45,6 +46,8 @@ Options:
   --md              Save markdown report to ./clawculator-report.md
   --json            Output raw JSON
   --out=PATH        Custom output path for --md or --report
+  --port=PORT       Custom port for --web (default: 3457)
+  --prune           Clean up SQLite database (prune events > 14d, snapshots > 1y)
   --config=PATH     Path to openclaw.json (auto-detected by default)
   --help, -h        Show this help
 
@@ -68,6 +71,33 @@ async function main() {
   console.log(BANNER);
 
   const openclawHome = process.env.OPENCLAW_HOME || path.join(os.homedir(), '.openclaw');
+
+  if (flags.prune) {
+    const dbPath = path.join(openclawHome, 'clawculator.db');
+    if (!fs.existsSync(dbPath)) {
+      console.log('\x1b[90mNo database found at\x1b[0m', dbPath);
+      console.log('\x1b[90mRun --web first to create the database.\x1b[0m');
+      process.exit(0);
+    }
+    let Database;
+    try { Database = require('better-sqlite3'); } catch {
+      console.error('\x1b[31mError:\x1b[0m better-sqlite3 required for --prune. Run: npm install better-sqlite3');
+      process.exit(1);
+    }
+    const db = new Database(dbPath);
+    const eventsBefore = db.prepare('SELECT COUNT(*) as c FROM events').get().c;
+    const snapsBefore = db.prepare('SELECT COUNT(*) as c FROM daily_snapshots').get().c;
+    db.exec(`DELETE FROM events WHERE timestamp < datetime('now', '-14 days')`);
+    db.exec(`DELETE FROM daily_snapshots WHERE date < date('now', '-365 days')`);
+    db.exec('VACUUM');
+    const eventsAfter = db.prepare('SELECT COUNT(*) as c FROM events').get().c;
+    const snapsAfter = db.prepare('SELECT COUNT(*) as c FROM daily_snapshots').get().c;
+    db.close();
+    console.log(`\x1b[32m✓ Pruned database:\x1b[0m ${dbPath}`);
+    console.log(`  Events:    ${eventsBefore} → ${eventsAfter} (removed ${eventsBefore - eventsAfter})`);
+    console.log(`  Snapshots: ${snapsBefore} → ${snapsAfter} (removed ${snapsBefore - snapsAfter})`);
+    process.exit(0);
+  }
 
   if (flags.web) {
     const { startWebDashboard } = require('../src/webDashboard');

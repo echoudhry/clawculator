@@ -1,5 +1,34 @@
+# Patches and dev artifacts
+*.patch
+*.tgz
+
+# Images and docs (GitHub-only)
 report-preview.png
-docs/
-files.zip
-skills/clawculator/files.zip
+web-dashboard.png
 logo.png
+docs/
+index.html
+
+# Skill archive
+skills/clawculator/files.zip
+
+# Tests
+test/
+__tests__/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Stale files
+src/clawculator.js

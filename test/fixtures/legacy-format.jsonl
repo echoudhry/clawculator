@@ -1,0 +1,2 @@
+{"type":"message","model":"claude-sonnet-4-5-20250929","timestamp":"2026-02-28T09:00:00Z","usage":{"input":1000,"output":500,"cacheRead":30000,"cacheWrite":1000,"totalTokens":32500,"cost":0.0145}}
+{"type":"message","model":"claude-sonnet-4-5-20250929","timestamp":"2026-02-28T09:05:00Z","usage":{"input":1200,"output":600,"cacheRead":31000,"cacheWrite":0,"totalTokens":32800,"cost":0.0167}}

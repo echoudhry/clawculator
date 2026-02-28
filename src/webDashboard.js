@@ -18,7 +18,13 @@ function initDB(dbPath) {
   try {
     Database = require('better-sqlite3');
   } catch {
-    console.error('\x1b[31mError:\x1b[0m better-sqlite3 not installed. Run: npm install better-sqlite3');
+    console.error('\n\x1b[31m  ✗ better-sqlite3 is required for --web\x1b[0m\n');
+    console.error('  Install it with:\n');
+    console.error('    \x1b[36mnpm install -g better-sqlite3\x1b[0m');
+    console.error('    \x1b[90m# or, if installed locally:\x1b[0m');
+    console.error('    \x1b[36mcd $(npm root -g)/clawculator && npm install better-sqlite3\x1b[0m\n');
+    console.error('  \x1b[90mThis is a native module that compiles on install.\x1b[0m');
+    console.error('  \x1b[90mRequires: Node.js 18+, Python 3, and a C++ compiler (Xcode CLI tools on macOS).\x1b[0m\n');
     process.exit(1);
   }
 

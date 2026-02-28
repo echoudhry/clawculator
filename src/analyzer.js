@@ -5,6 +5,10 @@ const path = require('path');
 const os   = require('os');
 
 // ── Model pricing (per million tokens, input/output) ─────────────
+// Last updated: 2026-02-28 — Update when Anthropic/OpenAI/Google change pricing
+const PRICING_UPDATED = '2026-02-28';
+const PRICING_STALE_DAYS = 60;
+
 const MODEL_PRICING = {
   'claude-opus-4-6':              { input: 5.00,  output: 25.00, label: 'Claude Opus 4.6' },
   'claude-opus-4-5':              { input: 5.00,  output: 25.00, label: 'Claude Opus 4.5' },
@@ -108,6 +112,10 @@ const FIXES = {
   IMAGE_DIMENSION: {
     fix: 'Lower imageMaxDimensionPx to reduce vision token costs — default 1200px is expensive',
     command: 'openclaw config set agents.defaults.imageMaxDimensionPx 800',
+  },
+  PRICING_STALE: {
+    fix: 'Update clawculator to get the latest model pricing data',
+    command: 'npm update -g clawculator',
   },
   MULTI_AGENT_PAID: (agentId) => ({
     fix: `Agent "${agentId}" has its own expensive model config — each agent bills independently`,
@@ -503,6 +511,10 @@ function analyzeConfig(configPath) {
 
 /**
  * Parse a .jsonl session transcript file and sum up real usage/cost data.
+ * Version-aware: handles multiple OpenClaw schema formats:
+ *   - v2026.2.x+: entry.message.usage (standard)
+ *   - v2026.1.x:  entry.usage (legacy)
+ *   - Anthropic raw: usage.cache_creation_input_tokens / usage.cache_read_input_tokens
  * Returns { input, output, cacheRead, cacheWrite, totalTokens, totalCost, messageCount, model, firstTs, lastTs }
  */
 function parseTranscript(jsonlPath) {
@@ -512,6 +524,7 @@ function parseTranscript(jsonlPath) {
 
     let input = 0, output = 0, cacheRead = 0, cacheWrite = 0, totalTokens = 0, totalCost = 0;
     let messageCount = 0, model = null, firstTs = null, lastTs = null;
+    let schemaDetected = null; // track which schema we're seeing
 
     for (const line of content.split('\n')) {
       if (!line.trim()) continue;
@@ -527,23 +540,29 @@ function parseTranscript(jsonlPath) {
       }
 
       // Only assistant messages with usage blocks have cost data
-      if (entry.type !== 'message') continue;
+      // Some schemas use entry.type === 'message', others use entry.role === 'assistant'
+      if (entry.type !== 'message' && entry.role !== 'assistant') continue;
 
-      // Usage can be at entry.usage (some formats) or entry.message.usage (standard format)
-      const u = entry.usage || entry.message?.usage;
+      // Usage can be in multiple locations depending on OpenClaw version
+      const u = entry.usage || entry.message?.usage || entry.response?.usage;
       if (!u) continue;
+
+      if (!schemaDetected) {
+        schemaDetected = entry.usage ? 'legacy' : entry.message?.usage ? 'standard' : 'response';
+      }
 
       messageCount++;
 
-      // Model can be at entry.model or entry.message.model
-      const entryModel = entry.model || entry.message?.model;
+      // Model can be at multiple locations
+      const entryModel = entry.model || entry.message?.model || entry.response?.model;
       if (entryModel && !model) model = entryModel;
 
-      input       += u.input       || 0;
-      output      += u.output      || 0;
-      cacheRead   += u.cacheRead   || 0;
-      cacheWrite  += u.cacheWrite  || 0;
-      totalTokens += u.totalTokens || 0;
+      // Token fields: handle both camelCase (OpenClaw) and snake_case (raw Anthropic API)
+      input       += u.input       || u.input_tokens               || 0;
+      output      += u.output      || u.output_tokens              || 0;
+      cacheRead   += u.cacheRead   || u.cache_read_input_tokens    || 0;
+      cacheWrite  += u.cacheWrite  || u.cache_creation_input_tokens || 0;
+      totalTokens += u.totalTokens || ((u.input || u.input_tokens || 0) + (u.output || u.output_tokens || 0)) || 0;
 
       // Prefer API-reported cost (already accounts for cache pricing)
       if (u.cost) {
@@ -557,7 +576,7 @@ function parseTranscript(jsonlPath) {
 
     if (messageCount === 0) return null;
 
-    return { input, output, cacheRead, cacheWrite, totalTokens, totalCost, messageCount, model, firstTs, lastTs };
+    return { input, output, cacheRead, cacheWrite, totalTokens, totalCost, messageCount, model, firstTs, lastTs, schemaDetected };
   } catch {
     return null;
   }
@@ -915,6 +934,19 @@ async function runAnalysis({ configPath, sessionsPath, logsDir }) {
     .reduce((sum, f) => sum + f.monthlyCost, 0);
 
   const realCost = sessionResult.totalRealCost || 0;
+
+  // Check pricing staleness — only affects cost estimates for config findings
+  // (actual transcript costs use API-reported cost.total, not the pricing table)
+  const pricingAge = Math.floor((Date.now() - new Date(PRICING_UPDATED).getTime()) / 86400000);
+  if (pricingAge > PRICING_STALE_DAYS) {
+    allFindings.push({
+      severity: 'low',
+      source: 'pricing',
+      title: `Model pricing table is ${pricingAge} days old`,
+      detail: `Pricing was last updated ${PRICING_UPDATED}. Actual costs from transcripts are unaffected (they use API-reported totals). Config-based cost estimates (heartbeat bleed, cron projections) may be slightly off. Update: npm update -g clawculator`,
+      ...FIXES.PRICING_STALE,
+    });
+  }
 
   return {
     scannedAt:    new Date().toISOString(),
