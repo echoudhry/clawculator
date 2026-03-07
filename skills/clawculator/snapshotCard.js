@@ -349,6 +349,149 @@ function generateSnapshotCard(analysis, outputDir) {
   const htmlPath = path.join(outputDir, 'clawculator-snapshot.html');
   fs.writeFileSync(htmlPath, html, 'utf8');
 
+  // ── Generate PNG card ──────────────────────────────────
+  let pngPath = null;
+  try {
+    const { createCanvas } = require('canvas');
+    const W = 1080, H = 1080;
+    const canvas = createCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#05080f';
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(34,211,238,0.03)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 54) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 54) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    // Border
+    ctx.strokeStyle = '#1a2744';
+    ctx.lineWidth = 2;
+    ctx.roundRect(24, 24, W - 48, H - 48, 24);
+    ctx.stroke();
+
+    // ── Header
+    ctx.font = 'bold 36px sans-serif';
+    ctx.fillStyle = '#22d3ee';
+    ctx.textAlign = 'center';
+    ctx.fillText('CLAWCULATOR', W / 2 + 20, 100);
+
+    // Lobster emoji substitute
+    ctx.font = '44px sans-serif';
+    ctx.fillText('🦞', W / 2 - 160, 102);
+
+    // ── Grade circle
+    const cx = W / 2, cy = 280, r = 100;
+    // Outer glow
+    ctx.beginPath(); ctx.arc(cx, cy, r + 8, 0, Math.PI * 2);
+    ctx.fillStyle = gradeGlow; ctx.fill();
+    // Ring
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = gradeColor + '66'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, r - 3, 0, Math.PI * 2);
+    ctx.strokeStyle = gradeColor + 'aa'; ctx.lineWidth = 2; ctx.stroke();
+    // Grade letter
+    ctx.font = 'bold 72px sans-serif';
+    ctx.fillStyle = gradeColor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(grade, cx, cy);
+    ctx.textBaseline = 'alphabetic';
+    // Label
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('COST HEALTH GRADE', cx, cy + r + 30);
+
+    // ── Cost range
+    ctx.font = 'bold 36px sans-serif';
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillText(costEmoji + '  ' + costRange, cx, 460);
+
+    // ── Divider
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 60, 500);
+    ctx.lineTo(W / 2 + 60, 500);
+    ctx.strokeStyle = '#1e3a5f'; ctx.lineWidth = 1; ctx.stroke();
+
+    // ── Pills
+    ctx.font = '20px sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    const pillLines = [];
+    let currentLine = '';
+    for (const p of pills) {
+      const item = p.icon + ' ' + p.label;
+      const test = currentLine ? currentLine + '   ' + item : item;
+      if (test.length > 45 && currentLine) {
+        pillLines.push(currentLine);
+        currentLine = item;
+      } else {
+        currentLine = test;
+      }
+    }
+    if (currentLine) pillLines.push(currentLine);
+
+    let pillY = 545;
+    for (const line of pillLines) {
+      ctx.fillText(line, cx, pillY);
+      pillY += 32;
+    }
+
+    // ── Findings
+    const findY = pillY + 30;
+    if (findingSummary.length > 0) {
+      ctx.font = 'bold 22px sans-serif';
+      findingSummary.forEach((f, i) => {
+        const c = f.startsWith('🔴') ? '#ef4444' : f.startsWith('🟠') ? '#f97316' : '#eab308';
+        ctx.fillStyle = c;
+        ctx.fillText(f, cx, findY + i * 32);
+      });
+    } else {
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillStyle = '#22c55e';
+      ctx.fillText('✅  No issues found', cx, findY);
+    }
+
+    // ── Divider 2
+    const divY2 = findY + (findingSummary.length > 0 ? findingSummary.length * 32 + 20 : 50);
+    ctx.beginPath();
+    ctx.moveTo(80, divY2);
+    ctx.lineTo(W - 80, divY2);
+    ctx.strokeStyle = '#1a2744'; ctx.lineWidth = 1; ctx.stroke();
+
+    // ── CTA
+    ctx.font = '18px sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('Get your OpenClaw cost grade', cx, divY2 + 40);
+
+    // Command box
+    const cmdY = divY2 + 70;
+    const cmdW = 380, cmdH = 44;
+    ctx.fillStyle = '#0b1120';
+    ctx.strokeStyle = '#1a2744';
+    ctx.lineWidth = 1;
+    ctx.roundRect(cx - cmdW / 2, cmdY - cmdH / 2, cmdW, cmdH, 8);
+    ctx.fill(); ctx.stroke();
+
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#22d3ee';
+    ctx.fillText('npx clawculator --snapshot', cx, cmdY + 6);
+
+    // Subtitle
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#334155';
+    ctx.fillText('100% offline  ·  your data never leaves your machine', cx, cmdY + 38);
+
+    // Write PNG
+    pngPath = path.join(outputDir, 'clawculator-snapshot.png');
+    fs.writeFileSync(pngPath, canvas.toBuffer('image/png'));
+  } catch (e) {
+    // canvas not installed — PNG generation skipped, HTML still works
+    pngPath = null;
+  }
+
   // ── Terminal card (screenshot-ready) ───────────────────
   const C = '\x1b[36m';   // cyan
   const G = gradeColor === '#22c55e' ? '\x1b[32m' : gradeColor === '#f59e0b' ? '\x1b[33m' : gradeColor === '#f97316' ? '\x1b[33m' : '\x1b[31m';
@@ -392,11 +535,15 @@ function generateSnapshotCard(analysis, outputDir) {
 
   console.log(lines.join('\n'));
 
-  // Also mention the HTML file
-  console.log(`  ${D}HTML card saved: ${htmlPath}${R}`);
-  console.log(`  ${D}Screenshot this terminal or open the HTML — both work!${R}\n`);
+  if (pngPath) {
+    console.log(`  \x1b[32m✓ PNG card saved:\x1b[0m ${pngPath}`);
+    console.log(`  \x1b[90mDrag into Twitter, Discord, or any social feed!\x1b[0m\n`);
+  } else {
+    console.log(`  \x1b[90mHTML card saved: ${htmlPath}\x1b[0m`);
+    console.log(`  \x1b[90mTip: npm install canvas — to auto-generate a PNG for sharing\x1b[0m\n`);
+  }
 
-  return { htmlPath, grade, costRange };
+  return { htmlPath, pngPath, grade, costRange };
 }
 
 module.exports = { generateSnapshotCard };

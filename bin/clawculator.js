@@ -172,10 +172,10 @@ async function main() {
     const { generateSnapshotCard } = require('../src/snapshotCard');
     const result = generateSnapshotCard(analysis, outDir);
     const { exec } = require('child_process');
-    exec(`open "${result.htmlPath}" 2>/dev/null || xdg-open "${result.htmlPath}" 2>/dev/null`, () => {
+    const openFile = result.pngPath || result.htmlPath;
+    exec(`open "${openFile}" 2>/dev/null || xdg-open "${openFile}" 2>/dev/null`, () => {
       process.exit(0);
     });
-    // Don't exit immediately — give exec time to open browser
     setTimeout(() => process.exit(0), 2000);
     return;
   }
