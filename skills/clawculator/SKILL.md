@@ -38,7 +38,16 @@ node {baseDir}/run.js --md
 
 Return the full markdown report to the user inline.
 
+When the user types `snapshot`, `share my grade`, `cost grade`, `clawculator snapshot`, or `what's my grade`, run:
+
+```bash
+node {baseDir}/run.js --snapshot
+```
+
+Return the terminal card output to the user. This shows their grade (A+ to D), cost range, setup complexity, and findings — designed to be screenshot and shared.
+
 **Flags**
+- `--snapshot` — shareable grade card (terminal output, screenshot-ready)
 - `--md` — write markdown report and print to stdout
 - `--json` — machine-readable JSON to stdout
 - `--out=PATH` — custom output path for `--md`

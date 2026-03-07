@@ -10,11 +10,12 @@ const fs = require('fs');
 
 const args = process.argv.slice(2);
 const flags = {
-  json:   args.includes('--json'),
-  md:     args.includes('--md'),
-  help:   args.includes('--help') || args.includes('-h'),
-  config: args.find(a => a.startsWith('--config='))?.split('=')[1],
-  out:    args.find(a => a.startsWith('--out='))?.split('=')[1],
+  json:     args.includes('--json'),
+  md:       args.includes('--md'),
+  snapshot: args.includes('--snapshot'),
+  help:     args.includes('--help') || args.includes('-h'),
+  config:   args.find(a => a.startsWith('--config='))?.split('=')[1],
+  out:      args.find(a => a.startsWith('--out='))?.split('=')[1],
 };
 
 const BANNER = `
@@ -78,6 +79,13 @@ async function main() {
 
   if (flags.json) {
     console.log(JSON.stringify(analysis, null, 2));
+    process.exit(0);
+  }
+
+  if (flags.snapshot) {
+    const { generateSnapshotCard } = require('./snapshotCard');
+    const outDir = flags.out || process.cwd();
+    generateSnapshotCard(analysis, outDir);
     process.exit(0);
   }
 
