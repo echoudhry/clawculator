@@ -17,18 +17,27 @@ function generateSnapshotCard(analysis, outputDir) {
   const mediums = s.medium || 0;
   const totalFindings = criticals + highs + mediums;
 
-  let grade, gradeColor, gradeGlow, gradeEmoji;
-  if (criticals === 0 && highs === 0 && mediums === 0) {
-    grade = 'A+'; gradeColor = '#22c55e'; gradeGlow = 'rgba(34,197,94,0.3)'; gradeEmoji = '🏆';
-  } else if (criticals === 0 && highs <= 1) {
-    grade = 'A'; gradeColor = '#22c55e'; gradeGlow = 'rgba(34,197,94,0.2)'; gradeEmoji = '✅';
-  } else if (criticals <= 1 && highs <= 2) {
-    grade = 'B'; gradeColor = '#f59e0b'; gradeGlow = 'rgba(245,158,11,0.2)'; gradeEmoji = '👍';
-  } else if (criticals <= 2) {
-    grade = 'C'; gradeColor = '#f97316'; gradeGlow = 'rgba(249,115,22,0.2)'; gradeEmoji = '⚠️';
-  } else {
-    grade = 'D'; gradeColor = '#ef4444'; gradeGlow = 'rgba(239,68,68,0.2)'; gradeEmoji = '🔥';
-  }
+  // ── Filter findings by type ────────────────────────────
+  // For the grade, only count CONFIG findings (things a new user would inherit)
+  // Exclude: historical session costs, untracked sessions, cache totals, cost gaps
+  // These are noise for "what does it cost to run this setup?"
+  const configFindings = (analysis.findings || []).filter(f => {
+    const t = (f.title || '').toLowerCase();
+    const src = (f.source || '').toLowerCase();
+    // Skip historical/session findings
+    if (t.includes('orphaned session')) return false;
+    if (t.includes('untracked session')) return false;
+    if (t.includes('prompt caching added')) return false;
+    if (t.includes('real cost') && t.includes('higher than')) return false;
+    if (t.includes('>50k tokens')) return false;
+    if (t.includes('pricing table')) return false;
+    // Keep config findings (heartbeat, whatsapp, hooks, crons, models, vision, memory)
+    return true;
+  });
+
+  const cfgCriticals = configFindings.filter(f => f.severity === 'critical').length;
+  const cfgHighs = configFindings.filter(f => f.severity === 'high').length;
+  const cfgMediums = configFindings.filter(f => f.severity === 'medium').length;
 
   // ── Cost range (bucketed, not exact) ───────────────────
   const todayCost = s.todayCost || 0;
@@ -41,6 +50,38 @@ function generateSnapshotCard(analysis, outputDir) {
   else if (todayCost < 25)   { costRange = '$10–25/day';    costEmoji = '💰'; }
   else if (todayCost < 50)   { costRange = '$25–50/day';    costEmoji = '🔥'; }
   else                       { costRange = '$50+/day';      costEmoji = '🚨'; }
+
+  // ── Compute grade ──────────────────────────────────────
+  // Grade = "how well is this SETUP configured for cost efficiency?"
+  // Only counts config findings, not historical session data
+  let grade, gradeColor, gradeGlow, gradeEmoji;
+
+  let score = (cfgCriticals * 5) + (cfgHighs * 2) + (cfgMediums * 0.5);
+
+  // Cost bonus: low daily spend is the whole point
+  if (todayCost < 1)       score -= 4;
+  else if (todayCost < 5)  score -= 3;
+  else if (todayCost < 10) score -= 1;
+  else if (todayCost > 50) score += 3;
+
+  // No criticals bonus
+  if (cfgCriticals === 0) score -= 2;
+
+  if (score < 0) score = 0;
+
+  if (score === 0) {
+    grade = 'A+'; gradeColor = '#22c55e'; gradeGlow = 'rgba(34,197,94,0.3)'; gradeEmoji = '🏆';
+  } else if (score <= 2) {
+    grade = 'A'; gradeColor = '#22c55e'; gradeGlow = 'rgba(34,197,94,0.2)'; gradeEmoji = '✅';
+  } else if (score <= 5) {
+    grade = 'B+'; gradeColor = '#84cc16'; gradeGlow = 'rgba(132,204,22,0.2)'; gradeEmoji = '👍';
+  } else if (score <= 8) {
+    grade = 'B'; gradeColor = '#f59e0b'; gradeGlow = 'rgba(245,158,11,0.2)'; gradeEmoji = '👍';
+  } else if (score <= 12) {
+    grade = 'C'; gradeColor = '#f97316'; gradeGlow = 'rgba(249,115,22,0.2)'; gradeEmoji = '⚠️';
+  } else {
+    grade = 'D'; gradeColor = '#ef4444'; gradeGlow = 'rgba(239,68,68,0.2)'; gradeEmoji = '🔥';
+  }
 
   // ── Setup complexity from config ───────────────────────
   const config = analysis.config || {};
@@ -66,7 +107,8 @@ function generateSnapshotCard(analysis, outputDir) {
   const modelCount = modelSet.size || 1;
 
   const totalTokens = s.totalTokensFound || 1;
-  const cacheEfficiency = Math.round((s.totalCacheRead || 0) / totalTokens * 100);
+  const totalWithCache = totalTokens + (s.totalCacheRead || 0) + (s.totalCacheWrite || 0);
+  const cacheEfficiency = Math.min(99, Math.round((s.totalCacheRead || 0) / totalWithCache * 100));
 
   // ── Build stat pills ──────────────────────────────────
   const pills = [];
@@ -79,11 +121,11 @@ function generateSnapshotCard(analysis, outputDir) {
   pills.push({ icon: '🧠', label: `${modelCount} model${modelCount>1?'s':''}` });
   if (cacheEfficiency > 0)  pills.push({ icon: '⚡', label: `${cacheEfficiency}% cache` });
 
-  // ── Findings summary ──────────────────────────────────
+  // ── Findings summary (config only) ─────────────────────
   const findingSummary = [];
-  if (criticals > 0) findingSummary.push(`🔴 ${criticals} critical`);
-  if (highs > 0)     findingSummary.push(`🟠 ${highs} high`);
-  if (mediums > 0)   findingSummary.push(`🟡 ${mediums} medium`);
+  if (cfgCriticals > 0) findingSummary.push(`🔴 ${cfgCriticals} critical`);
+  if (cfgHighs > 0)     findingSummary.push(`🟠 ${cfgHighs} high`);
+  if (cfgMediums > 0)   findingSummary.push(`🟡 ${cfgMediums} medium`);
 
   const html = `<!DOCTYPE html>
 <html lang="en">
