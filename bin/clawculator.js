@@ -16,6 +16,7 @@ const flags = {
   live:   args.includes('--live'),
   web:    args.includes('--web'),
   prune:  args.includes('--prune'),
+  snapshot: args.includes('--snapshot'),
   help:   args.includes('--help') || args.includes('-h'),
   config: args.find(a => a.startsWith('--config='))?.split('=')[1],
   out:    args.find(a => a.startsWith('--out='))?.split('=')[1],
@@ -43,6 +44,7 @@ Options:
   --live            Real-time cost dashboard in terminal (great for tmux)
   --web             Browser dashboard at localhost:3457 (pin the tab!)
   --report          Generate HTML report and open in browser
+  --snapshot        Generate a shareable cost snapshot card (screenshot & post!)
   --md              Save markdown report to ./clawculator-report.md
   --json            Output raw JSON
   --out=PATH        Custom output path for --md or --report
@@ -54,6 +56,7 @@ Options:
 Examples:
   npx clawculator                         # Terminal analysis
   npx clawculator --web                   # Browser dashboard (localhost:3457)
+  npx clawculator --snapshot              # Shareable cost card (screenshot & post!)
   npx clawculator --live                  # Real-time terminal dashboard
   npx clawculator --md                    # Markdown report (readable by your AI agent)
   npx clawculator --report                # Visual HTML dashboard
@@ -162,6 +165,19 @@ async function main() {
     console.log(`\x1b[32m✓ HTML report saved:\x1b[0m ${outPath}`);
     generateTerminalReport(analysis);
     process.exit(0);
+  }
+
+  if (flags.snapshot) {
+    const outDir = flags.out || process.cwd();
+    const { generateSnapshotCard } = require('../src/snapshotCard');
+    const result = generateSnapshotCard(analysis, outDir);
+    const { exec } = require('child_process');
+    exec(`open "${result.htmlPath}" 2>/dev/null || xdg-open "${result.htmlPath}" 2>/dev/null`, () => {
+      process.exit(0);
+    });
+    // Don't exit immediately — give exec time to open browser
+    setTimeout(() => process.exit(0), 2000);
+    return;
   }
 
   generateTerminalReport(analysis);

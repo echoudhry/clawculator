@@ -25,10 +25,9 @@ It could be any of these. Clawculator finds all of them — with zero AI, zero g
 ## Quick start
 
 ```bash
-npx clawculator --web     # Browser dashboard at localhost:3457
+npx clawculator --snapshot    # Get your cost grade — screenshot & share
+npx clawculator --web         # Browser dashboard at localhost:3457
 ```
-
-That's it. Pin the tab. Watch your costs in real-time while you work.
 
 ---
 
@@ -47,6 +46,41 @@ The dashboard features a Pac-Man-style lobster claw that chomps across the heade
 ---
 
 ## Modes
+
+### `--snapshot` — Shareable Grade Card (new in v2.8)
+
+```bash
+npx clawculator --snapshot
+```
+
+Grades your setup **A+ to D**, shows your daily cost range, and displays your setup complexity — all in a screenshot-ready terminal card. No exact dollar amounts or session names are exposed. Built for sharing.
+
+```
+  ╔══════════════════════════════════════════════╗
+  ║                                              ║
+  ║       🦞  C L A W C U L A T O R             ║
+  ║                                              ║
+  ║              ┌─────────┐                     ║
+  ║              │   A+    │                     ║
+  ║              └─────────┘                     ║
+  ║           cost health grade                  ║
+  ║                                              ║
+  ║        💲 Under $1/day                       ║
+  ║                                              ║
+  ║  📱 2 channels  🔧 4 skills  ⏰ 1 cron      ║
+  ║  💬 6 sessions  🧠 2 models  ⚡ 85% cache   ║
+  ║                                              ║
+  ║  ✅ No issues found                          ║
+  ║                                              ║
+  ║     Get your OpenClaw cost grade             ║
+  ║     npx clawculator --snapshot               ║
+  ║                                              ║
+  ╚══════════════════════════════════════════════╝
+```
+
+Screenshot it. Post it. What's your grade?
+
+Also works as an OpenClaw skill — type `snapshot` or `what's my grade` in any channel.
 
 ### `--web` — Browser Dashboard (new in v2.6)
 
@@ -151,12 +185,14 @@ The `--web` and `--live` modes watch these files in real-time, tailing new lines
 
 ```bash
 npx clawculator                          # Terminal analysis (default)
+npx clawculator --snapshot               # Shareable grade card (screenshot & post!)
 npx clawculator --web                    # Browser dashboard (localhost:3457)
 npx clawculator --web --port=8080        # Custom port
 npx clawculator --live                   # Real-time terminal dashboard
 npx clawculator --report                 # Visual HTML report
 npx clawculator --md                     # Markdown report
 npx clawculator --json                   # JSON for piping
+npx clawculator --prune                  # Clean up SQLite database
 npx clawculator --md --out=~/cost.md     # Custom output path
 npx clawculator --config=/path/to/openclaw.json
 npx clawculator --help
@@ -180,6 +216,11 @@ clawculator
 ```
 
 Your agent runs the analysis and returns the full markdown report directly in chat.
+
+For the shareable grade card, type:
+```
+snapshot
+```
 
 **Or install manually** into your workspace:
 ```bash

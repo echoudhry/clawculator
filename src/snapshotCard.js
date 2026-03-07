@@ -307,16 +307,52 @@ function generateSnapshotCard(analysis, outputDir) {
   const htmlPath = path.join(outputDir, 'clawculator-snapshot.html');
   fs.writeFileSync(htmlPath, html, 'utf8');
 
-  // Terminal summary
-  console.log(`\n  ${gradeEmoji} Grade: \x1b[1m${grade}\x1b[0m`);
-  console.log(`  ${costEmoji} Cost:  ${costRange}`);
-  console.log(`  📦 Setup: ${pills.map(p => p.label).join(' · ')}`);
-  if (findingSummary.length > 0) {
-    console.log(`  🔍 ${findingSummary.join(' · ')}`);
-  } else {
-    console.log(`  ✅ Clean — no issues`);
-  }
-  console.log('');
+  // ── Terminal card (screenshot-ready) ───────────────────
+  const C = '\x1b[36m';   // cyan
+  const G = gradeColor === '#22c55e' ? '\x1b[32m' : gradeColor === '#f59e0b' ? '\x1b[33m' : gradeColor === '#f97316' ? '\x1b[33m' : '\x1b[31m';
+  const D = '\x1b[90m';   // dim
+  const B = '\x1b[1m';    // bold
+  const R = '\x1b[0m';    // reset
+  const W = '\x1b[37m';   // white
+
+  const pillStr = pills.map(p => `${p.icon} ${p.label}`).join('  ');
+  const findStr = findingSummary.length > 0
+    ? findingSummary.join('  ')
+    : '✅ No issues found';
+
+  const lines = [
+    ``,
+    `${D}  ╔══════════════════════════════════════════════╗${R}`,
+    `${D}  ║${R}                                              ${D}║${R}`,
+    `${D}  ║${R}       ${C}🦞  C L A W C U L A T O R${R}            ${D}║${R}`,
+    `${D}  ║${R}                                              ${D}║${R}`,
+    `${D}  ║${R}              ${G}${B}┌─────────┐${R}                  ${D}║${R}`,
+    `${D}  ║${R}              ${G}${B}│  ${grade.padStart(3)}    │${R}                  ${D}║${R}`,
+    `${D}  ║${R}              ${G}${B}└─────────┘${R}                  ${D}║${R}`,
+    `${D}  ║${R}           ${D}cost health grade${R}                ${D}║${R}`,
+    `${D}  ║${R}                                              ${D}║${R}`,
+    `${D}  ║${R}        ${W}${B}${costEmoji} ${costRange}${R}`,
+    `${D}  ║${R}                                              ${D}║${R}`,
+    `${D}  ║${R}  ${D}──────────────────────────────────────────${R}  ${D}║${R}`,
+    `${D}  ║${R}                                              ${D}║${R}`,
+    `${D}  ║${R}  ${pillStr}`,
+    `${D}  ║${R}                                              ${D}║${R}`,
+    `${D}  ║${R}  ${findStr}`,
+    `${D}  ║${R}                                              ${D}║${R}`,
+    `${D}  ║${R}  ${D}──────────────────────────────────────────${R}  ${D}║${R}`,
+    `${D}  ║${R}                                              ${D}║${R}`,
+    `${D}  ║${R}     ${D}Get your OpenClaw cost grade${R}            ${D}║${R}`,
+    `${D}  ║${R}     ${C}${B}npx clawculator --snapshot${R}             ${D}║${R}`,
+    `${D}  ║${R}                                              ${D}║${R}`,
+    `${D}  ╚══════════════════════════════════════════════╝${R}`,
+    ``,
+  ];
+
+  console.log(lines.join('\n'));
+
+  // Also mention the HTML file
+  console.log(`  ${D}HTML card saved: ${htmlPath}${R}`);
+  console.log(`  ${D}Screenshot this terminal or open the HTML — both work!${R}\n`);
 
   return { htmlPath, grade, costRange };
 }
