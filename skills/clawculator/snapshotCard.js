@@ -22,7 +22,7 @@ function generateSnapshotCard(analysis, outputDir) {
   // Exclude: historical session costs, untracked sessions, cache totals, cost gaps
   // These are noise for "what does it cost to run this setup?"
   const configFindings = (analysis.findings || []).filter(f => {
-    const t = (f.title || '').toLowerCase();
+    const t = (f.title || f.message || '').toLowerCase();
     const src = (f.source || '').toLowerCase();
     // Skip historical/session findings
     if (t.includes('orphaned session')) return false;
