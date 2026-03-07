@@ -30,8 +30,8 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "dependencies": {},
   "optionalDependencies": {
-    "better-sqlite3": "^11.0.0",
-    "canvas": "^3.2.1"
+    "better-sqlite3": "^11.0.0"
   }
 }
